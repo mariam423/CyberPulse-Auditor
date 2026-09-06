@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { logger } from '../util/logger.js';
+import { ui, StepTracker } from '../util/status.js';
+import { OWASP_COLOR, STATUS } from '../util/banner.js';
 import { createModelClient } from '../model/provider.js';
 import { createTargetAdapter } from '../targets/adapter.js';
 import { loadCatalog } from '../owasp/catalog.js';
@@ -14,8 +16,8 @@ import { formatSarif } from '../report/sarif.js';
 import { formatHtml } from '../report/html.js';
 import { formatJson } from '../report/json.js';
 import { formatTextReport } from '../report/text.js';
-import { newFindingId, newRetestId } from '../util/ids.js';
-import type { RunId, FindingId, RetestId } from '../util/ids.js';
+import { newRetestId } from '../util/ids.js';
+import type { RunId, FindingId } from '../util/ids.js';
 import type { RunReport } from '../report/types.js';
 import { z } from 'zod';
 
@@ -43,37 +45,78 @@ export const AuditOptionsSchema = z.object({
 
 export type AuditOptions = z.infer<typeof AuditOptionsSchema>;
 
+// ── Output helpers ─────────────────────────────────────────────────────────────
+
 function writeOutput(content: string, outputFile?: string): void {
   if (outputFile) {
     const resolved = resolve(outputFile);
     writeFileSync(resolved, content, 'utf-8');
-    console.log(chalk.green(`✓ Report written to ${resolved}`));
+    ui.success(`Report saved → ${resolved}`);
   } else {
     console.log(content);
   }
 }
 
+function writeJson(content: string, outputFile?: string): void {
+  if (outputFile) {
+    const resolved = resolve(outputFile);
+    writeFileSync(resolved, content, 'utf-8');
+    ui.success(`Report saved → ${resolved}`);
+  } else {
+    console.log(content);
+  }
+}
+
+// ── Audit run ────────────────────────────────────────────────────────────────
+
 export async function runAudit(opts: AuditOptions): Promise<void> {
-  logger.info('cli:audit', `Starting run against ${opts.target.type}`);
+  // Section header
+  ui.section('Initializing Security Audit');
 
-  // Load OWASP catalog
+  // Show OWASP categories being probed
   const catalog = loadCatalog();
-  logger.info('cli:audit', `Loaded ${catalog.size} OWASP entries`);
-
-  // Build owaspIds array from all catalog entries
   const owaspIds = Array.from(catalog.keys());
+  console.log(`  Targeting ${owaspIds.length} OWASP LLM categories:`);
+  ui.owaspBanner(owaspIds);
+  ui.blank();
 
-  // Initialize target adapter
+  ui.kv('Goal', chalk.white(opts.goal));
+  ui.kv('Target', chalk.cyan(`${opts.target.type}: ${opts.target.url ?? opts.target.pythonFn ?? 'unknown'}`));
+  ui.kv('Model', chalk.cyan(`${opts.model.provider}/${opts.model.model}`));
+  ui.kv('Iterations', chalk.white(`${opts.maxIterations}`));
+  ui.kv('Output', chalk.white(opts.output.toUpperCase()));
+  ui.blank();
+
+  // Step tracker for the audit pipeline
+  const steps = new StepTracker([
+    'Loading OWASP catalog',
+    'Initializing target adapter',
+    'Initializing model client',
+    'Running attack phase',
+    'Evaluating findings',
+    'Generating patches',
+    'Running retest validation',
+    'Formatting report',
+  ]);
+
+  // ── Init ──────────────────────────────────────────────────────
+  steps.start('Loading OWASP catalog');
+  steps.done('Loading OWASP catalog');
+  ui.success(`Loaded ${catalog.size} OWASP entries`);
+
+  steps.start('Initializing target adapter');
   const target = createTargetAdapter({ ...opts.target, timeout: 30_000 });
+  steps.done('Initializing target adapter');
 
-  // Initialize model client
+  steps.start('Initializing model client');
   const model = createModelClient({
     ...opts.model,
     timeout: 60_000,
     maxRetries: 3,
   });
+  steps.done('Initializing model client');
 
-  // Build orchestrator config
+  // ── Build config ───────────────────────────────────────────────
   const config = OrchestratorConfigSchema.parse({
     goal: opts.goal,
     targetDescriptor: JSON.stringify(opts.target),
@@ -84,32 +127,87 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
     dbPath: opts.dbPath,
   });
 
-  // Run the full closed-loop audit
+  // ── Run ────────────────────────────────────────────────────────
+  ui.section('Running Closed-Loop Audit');
+  steps.start('Running attack phase');
+
   const orchestrator = new Orchestrator(config, model, target, opts.dbPath);
 
-  let result: Awaited<ReturnType<typeof orchestrator.run>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let result: Awaited<ReturnType<typeof orchestrator.run> >;
   try {
+    ui.pulse('Attacking target across all OWASP categories...');
     result = await orchestrator.run(opts.output as AuditOutputFormat);
+    ui.clearPulse();
+    steps.done('Running attack phase');
+
+    steps.start('Evaluating findings');
+    steps.done('Evaluating findings');
+    steps.start('Generating patches');
+    steps.done('Generating patches');
+    steps.start('Running retest validation');
+    steps.done('Running retest validation');
   } finally {
     orchestrator.close();
   }
 
-  // Output to file or stdout
+  // ── Results ────────────────────────────────────────────────────
+  ui.section('Audit Complete');
+  steps.render();
+  ui.blank();
+
+  const open = result.findings.filter((f) => !f.closed);
+  const closed = result.findings.filter((f) => f.closed);
+  const critical = result.findings.filter((f) => f.severity === 'critical' && !f.closed);
+
+  ui.kv('Run ID', chalk.white(result.runId));
+  ui.kv('Status', result.status === 'complete' ? chalk.green('complete') : (chalk as any).hex('#f97316')(result.status));
+  ui.kv('Iterations', chalk.white(`${result.iterations}`));
+  ui.kv('Findings', chalk.white(`${result.findings.length}`));
+  ui.kv('Patches', chalk.white(`${result.patches.length}`));
+  ui.blank();
+
+  if (critical.length > 0) {
+    ui.critical(`${critical.length} open CRITICAL finding(s) — fix immediately!`);
+    ui.blank();
+  }
+
+  // Severity breakdown
+  const severities = ['critical', 'high', 'medium', 'low', 'info'] as const;
+  for (const sev of severities) {
+    const count = result.findings.filter((f) => f.severity === sev).length;
+    if (count > 0) {
+      ui.severityBar(sev, count, result.findings.length);
+    }
+  }
+  ui.blank();
+
+  // Findings list
+  if (result.findings.length > 0) {
+    ui.sub('Findings');
+    for (const f of result.findings) {
+      ui.findingRow(f.owaspId, f.severity, f.title, f.closed);
+    }
+    ui.blank();
+  }
+
+  // Output
   if (opts.outputFile) {
+    steps.start('Formatting report');
     writeOutput(result.output, opts.outputFile);
+    steps.done('Formatting report');
   } else {
-    if (opts.output !== 'text') {
-      // For non-text, just print the raw output
+    if (opts.output === 'text') {
+      steps.start('Formatting report');
       console.log(result.output);
+      steps.done('Formatting report');
     } else {
-      console.log(chalk.green(`✓ Run ${result.runId} complete`));
-      console.log(chalk.gray(`  Status: ${result.status} | Iterations: ${result.iterations}`));
-      console.log(chalk.gray(`  Findings: ${result.findings.length} | Patches: ${result.patches.length}`));
-      console.log();
-      console.log(result.output);
+      writeOutput(result.output, opts.outputFile);
     }
   }
 }
+
+// ── Program builder ────────────────────────────────────────────────────────────
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -168,9 +266,11 @@ export function buildProgram(): Command {
 
         await runAudit(options);
       } catch (err) {
-        logger.error('cli', 'Audit failed', err);
+        ui.error('Audit failed');
         if (err instanceof z.ZodError) {
-          console.error(chalk.red('Validation errors:'), JSON.stringify(err.errors, null, 2));
+          console.error(JSON.stringify(err.errors, null, 2));
+        } else if (err instanceof Error) {
+          ui.error(err.message);
         }
         process.exit(1);
       }
@@ -187,35 +287,28 @@ export function buildProgram(): Command {
     .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
     .action(async (opts) => {
       try {
+        ui.section('Retest Validation');
         const store = new SqliteStore(opts.dbPath);
 
-        // Load the original run
         const run = store.getRun(opts.run as any);
         if (!run) {
-          console.error(chalk.red(`Run ${opts.run} not found`));
+          ui.error(`Run ${opts.run as string} not found`);
           store.close();
           process.exit(1);
         }
 
-        // Load the finding
         const findings = store.getFindingsByRun(opts.run as any);
         const finding = findings.find((f) => f.id === opts.finding);
         if (!finding) {
-          console.error(chalk.red(`Finding ${opts.finding} not found in run ${opts.run}`));
+          ui.error(`Finding ${opts.finding as string} not found in run ${opts.run as string}`);
           store.close();
           process.exit(1);
         }
 
-        // Load patches for this finding
         const patches = store.getPatchesByFinding(opts.finding as any);
 
-        // Build the target adapter (using the stored target config)
         let targetConfig: Record<string, unknown> = {};
-        try {
-          targetConfig = JSON.parse(run.target);
-        } catch {
-          // ignore parse errors
-        }
+        try { targetConfig = JSON.parse(run.target); } catch { /* ignore */ }
 
         const target = createTargetAdapter({
           type: targetConfig.type as 'http' | 'openai-compatible' | 'python-fn',
@@ -225,11 +318,15 @@ export function buildProgram(): Command {
           timeout: 30_000,
         });
 
-        // Reconstruct the patched system prompt if a patch exists
         const patch = patches.find((p) => p.kind === 'prompt');
         const patchedSystemPrompt = patch?.after_or_diff;
 
-        // Run the validator
+        ui.kv('Run', chalk.white(run.id));
+        ui.kv('Finding', `${(OWASP_COLOR[finding.owasp_id] ?? chalk.white)(finding.owasp_id)} — ${finding.title}`);
+        ui.kv('Retesting with', patchedSystemPrompt ? chalk.green('patched prompt') : chalk.gray('original prompt'));
+
+        ui.pulse('Running retest validation...');
+
         const { Validator } = await import('../agents/validator.js');
         const validator = new Validator(target);
 
@@ -243,8 +340,8 @@ export function buildProgram(): Command {
         });
 
         const output = await validator.run(input);
+        ui.clearPulse();
 
-        // Store the retest result
         store.addRetest({
           id: newRetestId(),
           runId: run.id as RunId,
@@ -254,7 +351,26 @@ export function buildProgram(): Command {
           evidence: output.evidence,
         });
 
-        const verdictColor = output.verdict === 'closed' ? chalk.green : output.verdict === 'open' ? chalk.red : chalk.yellow;
+        const verdictColor = output.verdict === 'closed' ? chalk.green : output.verdict === 'open' ? chalk.red : (chalk as any).hex('#f97316');
+        const verdictIcon = output.verdict === 'closed' ? STATUS.tick : output.verdict === 'open' ? STATUS.cross : STATUS.warn;
+
+        ui.blank();
+        ui.divider();
+        console.log(
+          `  ${verdictIcon}  ${chalk.bold('Verdict')}:  ${verdictColor(output.verdict.toUpperCase())}  ` +
+          `(${output.attempts.length} attempts)`
+        );
+        console.log(
+          `  ${output.closed ? STATUS.tick : STATUS.cross}  ${chalk.bold('Closed')}:  ${output.closed ? chalk.green('YES — vulnerability mitigated') : chalk.red('NO — still vulnerable')}`
+        );
+        ui.divider();
+        ui.blank();
+
+        if (output.evidence) {
+          ui.sub('Retest Evidence');
+          console.log(chalk.gray(output.evidence));
+          ui.blank();
+        }
 
         const resultObj = {
           findingId: finding.id,
@@ -266,26 +382,18 @@ export function buildProgram(): Command {
         };
 
         if (opts.output === 'json') {
-          writeOutput(JSON.stringify(resultObj, null, 2), opts.outputFile);
-        } else {
-          console.log(chalk.bold(`\nCyberPulse Retest — Finding ${finding.id}\n`));
-          console.log(`  OWASP ID : ${finding.owasp_id}`);
-          console.log(`  Verdict  : ${verdictColor(output.verdict.toUpperCase())}`);
-          console.log(`  Closed   : ${output.closed ? chalk.green('YES') : chalk.red('NO')}`);
-          console.log(`  Attempts : ${output.attempts.length}`);
-          console.log();
-          console.log(chalk.gray('Evidence:'));
-          console.log(chalk.gray(output.evidence));
-          if (opts.outputFile) {
-            console.log(chalk.green(`\n✓ Retest result written`));
-          }
+          writeJson(JSON.stringify(resultObj, null, 2), opts.outputFile);
+        } else if (opts.outputFile) {
+          writeJson(JSON.stringify(resultObj, null, 2), opts.outputFile);
         }
 
         store.close();
       } catch (err) {
-        logger.error('cli', 'Retest failed', err);
+        ui.error('Retest failed');
         if (err instanceof z.ZodError) {
-          console.error(chalk.red('Validation errors:'), JSON.stringify(err.errors, null, 2));
+          console.error(JSON.stringify(err.errors, null, 2));
+        } else if (err instanceof Error) {
+          ui.error(err.message);
         }
         process.exit(1);
       }
@@ -301,17 +409,23 @@ export function buildProgram(): Command {
     .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
     .action(async (opts) => {
       try {
+        ui.section('Generating Report');
         const store = new SqliteStore(opts.dbPath);
+
         const run = store.getRun(opts.run as any);
         if (!run) {
-          console.error(chalk.red(`Run ${opts.run} not found`));
+          ui.error(`Run ${opts.run as string} not found`);
           store.close();
           process.exit(1);
         }
 
         const findings = store.getFindingsByRun(opts.run as any);
 
-        // Reconstruct RunReport from stored data
+        ui.kv('Run ID', chalk.white(run.id));
+        ui.kv('Status', run.status === 'complete' ? chalk.green('complete') : (chalk as any).hex('#f97316')(run.status));
+        ui.kv('Findings', chalk.white(`${findings.length}`));
+        ui.kv('Format', chalk.white(opts.format.toUpperCase()));
+
         const config = JSON.parse(run.config_json);
         const reportRun: RunReport = {
           runId: run.id as RunId,
@@ -334,13 +448,22 @@ export function buildProgram(): Command {
           retests: [],
         };
 
+        ui.blank();
+        ui.pulse(`Formatting as ${opts.format.toUpperCase()}...`);
         const output = selectFormat(reportRun, opts.format as AuditOutputFormat);
+        ui.clearPulse();
+
         writeOutput(output, opts.outputFile);
+        ui.blank();
+        ui.success(`Report ready`);
+
         store.close();
       } catch (err) {
-        logger.error('cli', 'Report failed', err);
+        ui.error('Report generation failed');
         if (err instanceof z.ZodError) {
-          console.error(chalk.red('Validation errors:'), JSON.stringify(err.errors, null, 2));
+          console.error(JSON.stringify(err.errors, null, 2));
+        } else if (err instanceof Error) {
+          ui.error(err.message);
         }
         process.exit(1);
       }
