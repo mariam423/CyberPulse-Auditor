@@ -1,0 +1,11 @@
+import type { AttackPayload } from '../types.js';
+import type { OwaspId } from '../../owasp/types.js';
+import { LLM01_PAYLOADS } from './llm01-prompt-injection.js';
+import { LLM06_PAYLOADS } from './llm06-excessive-agency.js';
+declare const PAYLOAD_REGISTRY: Record<OwaspId, AttackPayload[]>;
+export { PAYLOAD_REGISTRY };
+export declare function getPayloads(owaspId: OwaspId): AttackPayload[];
+export declare function getAllPayloads(): AttackPayload[];
+export declare function getPayloadById(id: string): AttackPayload | undefined;
+export { LLM01_PAYLOADS, LLM06_PAYLOADS };
+export type { AttackPayload };

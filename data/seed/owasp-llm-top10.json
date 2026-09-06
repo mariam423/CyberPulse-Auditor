@@ -1,0 +1,132 @@
+[
+  {
+    "id": "LLM01",
+    "title": "Prompt Injection",
+    "description": "Adversarial inputs can cause unintended behaviors by manipulating the model's prompts through direct or indirect injection techniques.",
+    "severity": "critical",
+    "common_patterns": [
+      "Hidden instructions in user inputs",
+      "Role-play or jailbreak prompts",
+      "Multi-turn conversation manipulation",
+      "Indirect injection via tool outputs or context"
+    ],
+    "mitigation": "Input validation, output filtering, privilege separation between system and user prompts, and prompt encapsulation."
+  },
+  {
+    "id": "LLM02",
+    "title": "Insecure Output Handling",
+    "description": "Model outputs are not validated or sanitized before downstream processing, allowing potential XSS, SSRF, or other injection attacks.",
+    "severity": "high",
+    "common_patterns": [
+      "Reflected content without encoding",
+      "Dynamic code execution from model output",
+      "File/path manipulation from outputs",
+      "System command construction from outputs"
+    ],
+    "mitigation": "Treat all model output as untrusted. Apply output validation, encoding, and sandboxing before passing to downstream components."
+  },
+  {
+    "id": "LLM03",
+    "title": "Training Data Poisoning",
+    "description": "Malicious data injected into training corpora can introduce backdoors, biases, or vulnerabilities that manifest at inference time.",
+    "severity": "high",
+    "common_patterns": [
+      "Curated dataset tampering",
+      "Pre-trained model contamination",
+      "Automated dataset pipeline injection",
+      "Concept ablation and backdoor triggers"
+    ],
+    "mitigation": "Verify data supply chains, use provenance tracking, apply content filtering on training data, and monitor for distribution shifts."
+  },
+  {
+    "id": "LLM04",
+    "title": "Model Denial of Service",
+    "description": "Resource exhaustion through abnormally large inputs, recursive calls, or strategic input that triggers expensive processing.",
+    "severity": "medium",
+    "common_patterns": [
+      "Token bomb / nesting attacks",
+      "Repeated expensive operations",
+      "Context stuffing",
+      "Triggering long chain-of-thought"
+    ],
+    "mitigation": "Implement input size limits, rate limiting, quota systems, and resource monitoring. Detect and reject anomalously expensive requests."
+  },
+  {
+    "id": "LLM05",
+    "title": "Supply Chain Vulnerabilities",
+    "description": "Vulnerabilities in the ML supply chain including third-party models, packages, and pre-trained components.",
+    "severity": "high",
+    "common_patterns": [
+      "Compromised model weights",
+      "Vulnerable inference libraries",
+      "Unverified third-party plugins",
+      "Stale or deprecated dependencies"
+    ],
+    "mitigation": "Use signed model artifacts, pin dependency versions, verify checksums, and audit third-party components before deployment."
+  },
+  {
+    "id": "LLM06",
+    "title": "Excessive Agency",
+    "description": "LLM-powered systems taking actions that are unintended, irreversible, or beyond the system's security boundaries.",
+    "severity": "critical",
+    "common_patterns": [
+      "Unbounded tool use without approval",
+      "Actions based on unvalidated outputs",
+      "Privilege escalation through model recommendations",
+      "Unintended data exfiltration"
+    ],
+    "mitigation": "Limit tool permissions, require human approval for sensitive actions, implement rate limiting on tool calls, and apply least-privilege to model agency."
+  },
+  {
+    "id": "LLM07",
+    "title": "System Prompt Leakage",
+    "description": "Exposing system-level instructions, configuration, or internal context through prompts, errors, or outputs.",
+    "severity": "medium",
+    "common_patterns": [
+      "Direct prompt extraction attacks",
+      "Log or history leakage",
+      "Error message disclosure",
+      "Metadata exposure through token patterns"
+    ],
+    "mitigation": "Restrict system prompt access, mask internal context in outputs, implement prompt obfuscation, and sanitize error messages."
+  },
+  {
+    "id": "LLM08",
+    "title": "Vector and Embedding Weaknesses",
+    "description": "Manipulation of retrieval-augmented generation (RAG) systems through poisoned vector stores or embedding spaces.",
+    "severity": "medium",
+    "common_patterns": [
+      "Embedding inversion / data extraction",
+      "Cross-tenant contamination",
+      "Semantic search manipulation",
+      "Adversarial document injection"
+    ],
+    "mitigation": "Input sanitization for vector stores, tenant isolation, content trust scoring, and retrieval result validation."
+  },
+  {
+    "id": "LLM09",
+    "title": "Misinformation",
+    "description": "LLM produces plausible but false, harmful, or misleading outputs presented as factual.",
+    "severity": "medium",
+    "common_patterns": [
+      "Hallucinated facts with high confidence",
+      "Targeted disinformation campaigns",
+      "Manipulated reasoning chains",
+      "Credential fabrication"
+    ],
+    "mitigation": "Implement fact-checking pipelines, citation requirements, uncertainty quantification, and ground outputs against trusted sources."
+  },
+  {
+    "id": "LLM10",
+    "title": "Model Theft",
+    "description": "Unauthorized access, extraction, or replication of proprietary model weights and capabilities.",
+    "severity": "high",
+    "common_patterns": [
+      "API-based model extraction",
+      "Adversarial querying for weight reconstruction",
+      "Model distillation attacks",
+      "Insider data exfiltration"
+    ],
+    "mitigation": "Rate limiting, access logging, output perturbation, model watermarking, and monitoring for anomalous query patterns."
+  }
+]
