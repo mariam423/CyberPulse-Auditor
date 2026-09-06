@@ -46,6 +46,39 @@ export function printBanner(): void {
   console.log('');
 }
 
+/**
+ * Print the interactive mode-selection menu.
+ * Shown when `cyberpulse` is run with no subcommand.
+ */
+export function printInteractiveMenu(): void {
+  console.log(BANNER);
+  console.log(SUBTITLE);
+  console.log(chalk.dim('  ──────────────────────────────────────────────────────────────'));
+  console.log(
+    `  ${VERSION}  ·  ${chalk.green('✓')} SQLite backend  ·  ${chalk.cyan('⚡')} 10 OWASP categories`
+  );
+  console.log(TAGLINE);
+  console.log('');
+  console.log(chalk.bold.white('  ┌─────────────────────────────────────────────────────────┐'));
+  console.log(chalk.bold.white('  │            How would you like to proceed?                │'));
+  console.log(chalk.bold.white('  └─────────────────────────────────────────────────────────┘'));
+  console.log('');
+  console.log(`  ${chalk.green('  [1]')}  ${chalk.bold.white('CLI Interactive Mode')}`);
+  console.log(`       ${chalk.dim('Guided terminal wizard — pick targets, goals, and categories')}`);
+  console.log('');
+  console.log(`  ${chalk.cyan('  [2]')}  ${chalk.bold.white('Launch GUI Dashboard')}`);
+  console.log(`       ${chalk.dim('Next.js web UI at http://localhost:3000 — visual reports & controls')}`);
+  console.log('');
+  console.log(`  ${chalk.gray('  [3]')}  ${chalk.bold.white('Direct Audit (CLI)')}`);
+  console.log(`       ${chalk.dim('Run audit directly with flags — cyberpulse audit --help')}`);
+  console.log('');
+  console.log(chalk.dim('  ──────────────────────────────────────────────────────────────'));
+  console.log(
+    `  ${chalk.gray('Tip:')} ${chalk.dim('`cyberpulse gui`')} ${chalk.gray('to skip this menu and launch the GUI directly')
+  }`);
+  console.log('');
+}
+
 /** Status icons */
 export const STATUS = {
   info:     chalk.cyan('    ℹ'),

@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --emerald: #10b981;
+  --emerald-glow: rgba(16, 185, 129, 0.4);
+  --severity-critical: #dc2626;
+  --severity-high: #f97316;
+  --severity-medium: #eab308;
+  --severity-low: #22c55e;
+  --severity-info: #3b82f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #0a0f1e;
+  color: #f1f5f9;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #111827;
+}
+::-webkit-scrollbar-thumb {
+  background: #10b98144;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #10b98188;
+}
+
+/* Selection */
+::selection {
+  background: rgba(16, 185, 129, 0.3);
+  color: #f1f5f9;
+}
+
+/* Grid background pattern */
+.bg-grid {
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px);
+}
+
+/* Emerald glow text */
+.text-glow {
+  text-shadow: 0 0 20px var(--emerald-glow);
+}
+
+/* Card glass effect */
+.card-glass {
+  background: rgba(17, 24, 39, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(16, 185, 129, 0.1);
+}
+
+/* Severity badges */
+.severity-critical { color: var(--severity-critical); }
+.severity-high     { color: var(--severity-high); }
+.severity-medium   { color: var(--severity-medium); }
+.severity-low      { color: var(--severity-low); }
+.severity-info     { color: var(--severity-info); }
+
+.bg-severity-critical { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.3); }
+.bg-severity-high     { background: rgba(249, 115, 22, 0.15); border-color: rgba(249, 115, 22, 0.3); }
+.bg-severity-medium   { background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.3); }
+.bg-severity-low      { background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); }
+.bg-severity-info      { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); }
+
+/* OWASP category colors */
+.owasp-llm01 { color: #ef4444; }
+.owasp-llm02 { color: #f97316; }
+.owasp-llm03 { color: #eab308; }
+.owasp-llm04 { color: #22c55e; }
+.owasp-llm05 { color: #3b82f6; }
+.owasp-llm06 { color: #8b5cf6; }
+.owasp-llm07 { color: #a855f7; }
+.owasp-llm08 { color: #ec4899; }
+.owasp-llm09 { color: #6b7280; }
+.owasp-llm10 { color: #f1f5f9; }

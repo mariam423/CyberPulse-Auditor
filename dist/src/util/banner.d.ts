@@ -1,6 +1,11 @@
 /** Divider line */
 export declare const DIVIDER: string;
 export declare function printBanner(): void;
+/**
+ * Print the interactive mode-selection menu.
+ * Shown when `cyberpulse` is run with no subcommand.
+ */
+export declare function printInteractiveMenu(): void;
 /** Status icons */
 export declare const STATUS: {
     readonly info: string;

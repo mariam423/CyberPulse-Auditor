@@ -207,6 +207,29 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
   }
 }
 
+// ── GUI command ────────────────────────────────────────────────────────────────
+
+async function guiCommand(opts: { port?: number; open?: boolean }): Promise<void> {
+  const port = opts.port ?? 3000;
+  const open = opts.open ?? true;
+
+  const { launchGui } = await import('../core/gui-launcher.js');
+  const { printBanner } = await import('../util/banner.js');
+
+  printBanner();
+  console.log(chalk.bold.cyan('  Launching GUI Dashboard...\n'));
+
+  const server = await launchGui({ port, open, detached: true });
+  console.log(
+    `  ${chalk.green('✔')} GUI starting at ${chalk.cyan(server.url)}`
+  );
+  console.log(chalk.dim('  Press Ctrl+C to stop the server.\n'));
+
+  await server.promise?.catch(() => {
+    // Already running or exited silently
+  });
+}
+
 // ── Program builder ────────────────────────────────────────────────────────────
 
 export function buildProgram(): Command {
@@ -216,6 +239,22 @@ export function buildProgram(): Command {
     .name('cyberpulse')
     .description('CyberPulse Auditor — Multi-Agent LLM Security Copilot')
     .version('0.1.0');
+
+  // ── gui command ─────────────────────────────────────────────
+  const gui = program.command('gui');
+  gui
+    .description('Launch the CyberPulse GUI dashboard (Next.js web UI)')
+    .option('--port <n>', 'Port to run the GUI on', '3000')
+    .option('--no-open', 'Do not open the browser automatically')
+    .action(async (opts) => {
+      try {
+        await guiCommand({ port: parseInt(opts.port, 10), open: opts.open });
+      } catch (err) {
+        ui.error('Failed to launch GUI');
+        if (err instanceof Error) ui.error(err.message);
+        process.exit(1);
+      }
+    });
 
   // ── audit command ─────────────────────────────────────────────
   const audit = program.command('audit');
