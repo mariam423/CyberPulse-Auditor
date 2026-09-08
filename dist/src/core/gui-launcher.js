@@ -21,6 +21,20 @@ function isPortInUse(port) {
     });
 }
 /**
+ * Open a URL in the default browser using the appropriate platform command.
+ * Falls back silently if no browser is available.
+ */
+function openBrowser(url) {
+    const isWindows = process.platform === 'win32';
+    const openCmd = isWindows ? 'start' : 'xdg-open';
+    try {
+        spawn(openCmd, [url], { detached: true, stdio: 'ignore', shell: true }).unref();
+    }
+    catch {
+        // Silently ignore if browser can't be opened
+    }
+}
+/**
  * Launch the Next.js GUI dashboard.
  * Returns the server info; call server.promise to wait for ready.
  */
@@ -29,11 +43,14 @@ export async function launchGui(options = {}) {
     const url = `http://localhost:${port}`;
     // Check if already running
     if (await isPortInUse(port)) {
+        if (options.open)
+            openBrowser(url);
         return { port, url };
     }
-    // Resolve gui directory (src/core/ → project root → gui/)
-    const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-    const guiDir = resolve(cliRoot, 'gui');
+    // Resolve gui directory:
+    // dist/src/core/gui-launcher.js → up 3 levels to project root → gui/
+    const launcherDir = dirname(fileURLToPath(import.meta.url));
+    const guiDir = resolve(launcherDir, '../../../gui');
     const nextBin = resolve(guiDir, 'node_modules/.bin/next');
     // Verify GUI dependencies are installed
     if (!existsSync(nextBin)) {
@@ -47,18 +64,19 @@ export async function launchGui(options = {}) {
         PORT: String(port),
         CYBERPULSE_DB_PATH: process.env.CYBERPULSE_DB_PATH ?? 'data/cyberpulse.db',
     };
-    // Build args for next dev
-    const args = ['dev'];
-    if (options.open)
-        args.push('--open');
-    // Use shell:false with direct binary path to avoid /bin/sh dependency issues
-    const child = spawn(nextBin, args, {
+    // Start next dev (no --open flag — we open the browser manually)
+    const child = spawn(nextBin, ['dev', '--port', String(port)], {
         cwd: guiDir,
         env,
         stdio: 'inherit',
         shell: false,
     });
-    const promise = waitForServer(port);
+    // Wait for server to be ready, then optionally open browser
+    const promise = (async () => {
+        await waitForServer(port);
+        if (options.open)
+            openBrowser(url);
+    })();
     if (options.detached) {
         child.unref();
         return { port, url };

@@ -4,8 +4,8 @@
  * Response: { runId, status, ... }
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { runAudit } from '../../../../../src/core/orchestrator.js';
-import type { StartScanRequest } from '../../../../../src/core/types.js';
+import { runAudit } from '@core/orchestrator';
+import type { StartScanRequest } from '@core/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
