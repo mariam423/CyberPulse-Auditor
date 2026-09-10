@@ -13,7 +13,7 @@
 
 import { z } from 'zod';
 import { logger } from '../util/logger.js';
-import { newRunId } from '../util/ids.js';
+import { newRunId, asFindingId, asPatchId } from '../util/ids.js';
 import type { RunId } from '../util/ids.js';
 import { SqliteStore } from '../store/sqlite.js';
 import { createQwenPawKernel } from './qwenpaw-adapter.js';
@@ -136,7 +136,7 @@ export class Orchestrator {
         const findingId = f.id as string;
         owaspIdToFindingId.set(f.owaspId as string, findingId);
         this.store.addFinding({
-          id: findingId as any,
+          id: asFindingId(findingId),
           runId: this.runId,
           owaspId: f.owaspId as OwaspId,
           severity: f.severity as string,
@@ -164,9 +164,9 @@ export class Orchestrator {
         const resolvedFindingId = owaspIdToFindingId.get(owaspId) ?? owaspId;
 
         this.store.addPatch({
-          id: patchId as any,
+          id: asPatchId(patchId),
           runId: this.runId,
-          findingId: resolvedFindingId as any,
+          findingId: asFindingId(resolvedFindingId),
           kind: (p.kind as 'prompt' | 'code') ?? 'prompt',
           before: (p.before as string) ?? '',
           afterOrDiff: (p.after ?? p.diff ?? '') as string,
@@ -203,7 +203,7 @@ export class Orchestrator {
       if (hasPatch) {
         finding.closed = true;
         finding.closedBy = allPatches.find((p) => p.findingId === finding.id)?.id ?? '';
-        this.store.closeFinding(finding.id as any);
+        this.store.closeFinding(asFindingId(finding.id));
 
         allRetests.push({
           findingId: finding.id,

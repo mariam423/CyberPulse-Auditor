@@ -4,15 +4,28 @@
  * Response: { runId, status, ... }
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { resolve } from 'node:path';
 import { runAudit } from '@core/orchestrator';
 import type { StartScanRequest } from '@core/types';
+import { StartScanRequestSchema } from '@core/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Resolve the shared database path at the project root.
+ * The Next.js server always runs with cwd = gui/, so the shared DB is
+ * <project root>/data/cyberpulse.db → ../data/cyberpulse.db from here.
+ * (import.meta.url is unreliable in bundled routes — webpack rewrites it.)
+ */
+function rootDbPath(): string {
+  if (process.env.CYBERPULSE_DB_PATH) return resolve(process.env.CYBERPULSE_DB_PATH);
+  return resolve(process.cwd(), '../data/cyberpulse.db');
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body: StartScanRequest = await req.json();
+    const body: StartScanRequest = StartScanRequestSchema.parse(await req.json());
 
     const result = await runAudit(
       {
@@ -34,7 +47,7 @@ export async function POST(req: NextRequest) {
       },
       body.model,
       'json',
-      process.env.CYBERPULSE_DB_PATH ?? 'data/cyberpulse.db'
+      rootDbPath()
     );
 
     return NextResponse.json({

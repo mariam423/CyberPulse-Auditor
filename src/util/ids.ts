@@ -25,6 +25,23 @@ export function newRetestId(): RetestId {
   return brand(`ret_${randomBytes(8).toString('hex')}`);
 }
 
+/** Re-brand an untrusted/raw string as a branded ID (CLI input, DB rows). */
+export function asRunId(id: string): RunId {
+  return brand(id);
+}
+
+export function asFindingId(id: string): FindingId {
+  return brand(id);
+}
+
+export function asPatchId(id: string): PatchId {
+  return brand(id);
+}
+
+export function asRetestId(id: string): RetestId {
+  return brand(id);
+}
+
 export function isValidId(id: string): boolean {
   return /^[a-z]+_[a-f0-9]{16,24}$/.test(id);
 }

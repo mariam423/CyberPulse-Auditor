@@ -10,7 +10,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src bin",
     "format": "prettier --write src tests",
     "cyberpulse": "node --loader ts-node/esm bin/cyberpulse.ts"
   },
@@ -22,12 +22,14 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.5.0",
     "eslint": "^9.9.0",
     "prettier": "^3.3.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^2.0.5"
   },
   "engines": {

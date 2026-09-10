@@ -49,6 +49,31 @@ export function buildBlockingSchema(attackPayload: string, _legitimateExample: s
     /attacker\./i,
     /169\.254\.169\.254/i,
     /\{\{.*\}\}/i, // template injection
+    // SSRF
+    /169\.254\./i,
+    /10\.0\.0\.\d+/i,
+    /127\.0\.0\.1/i,
+    /localhost:\d+/i,
+    /192\.168\.\d+/i,
+    /172\.16\.\d+/i,
+    /metadata/i,
+    /iam\/security-credentials/i,
+    /redirect\?url=/i,
+    /%31%32%37/i,
+    // Insecure deserialization
+    /pickle/i,
+    /__reduce__/i,
+    /!!python\/object/i,
+    /yaml\.load/i,
+    /objectinputstream/i,
+    /readobject/i,
+    /commons-collections/i,
+    /node-serialize/i,
+    /_\$\$nd_func\$\$/i,
+    /__proto__/i,
+    /invokertransformer/i,
+    /deserializ/i,
+    /unmarshal/i,
   ];
 
   for (const word of words) {
@@ -146,7 +171,6 @@ function computeDiffHunks(oldLines: string[], newLines: string[]): DiffHunk[] {
 
   // Group into hunks
   const hunks: DiffHunk[] = [];
-  let hunkStart = 0;
   let editI = 0;
 
   while (editI < edits.length) {
@@ -155,7 +179,6 @@ function computeDiffHunks(oldLines: string[], newLines: string[]): DiffHunk[] {
     if (editI >= edits.length) break;
 
     const changeStart = Math.max(0, editI - CONTEXT);
-    const changeEnd = editI;
     let editEnd = editI;
 
     while (editEnd < edits.length && edits[editEnd]?.type !== 'keep') editEnd++;
@@ -173,7 +196,6 @@ function computeDiffHunks(oldLines: string[], newLines: string[]): DiffHunk[] {
 
     const keepEdits = edits.slice(changeStart, contextEnd).filter((e) => e?.type === 'keep');
     const firstKeep = keepEdits[0];
-    const lastKeep = keepEdits[keepEdits.length - 1];
 
     const oldStart = firstKeep?.oldIdx ?? 1;
     const oldCount = body.filter((l) => !l.startsWith('+')).length;
@@ -219,7 +241,7 @@ export function createCodePatch(opts: CodePatchOptions): CodePatch {
 
   return {
     kind: 'code',
-    owaspId: owaspId as any,
+    owaspId: owaspId as CodePatch['owaspId'],
     file,
     diff,
     zodSchema,
@@ -234,7 +256,6 @@ export function createCodePatch(opts: CodePatchOptions): CodePatch {
  */
 export function validateBlockingSchema(schemaSource: string, attackPayload: string): ZodError | null {
   try {
-    // eslint-disable-next-line no-new-func
     const schemaFn = new Function('z', `return ${schemaSource}`);
     const schema = schemaFn(z);
     schema.parse(attackPayload);

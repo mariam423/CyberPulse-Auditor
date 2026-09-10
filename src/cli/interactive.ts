@@ -10,7 +10,6 @@ import chalk from 'chalk';
 import { printBanner, OWASP_COLOR } from '../util/banner.js';
 import { runAudit } from '../core/orchestrator.js';
 import type { AuditConfig, OwaspId } from '../core/types.js';
-import type { AuditOptions } from './program.js';
 
 const rl = () =>
   readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -204,30 +203,7 @@ export async function runInteractive(): Promise<void> {
     return;
   }
 
-  // Run the audit
-  const opts: AuditOptions = {
-    target: {
-      type: targetType as AuditOptions['target']['type'],
-      url: targetUrl || undefined,
-      pythonFn: pythonFn || undefined,
-      headers: {},
-    },
-    model: {
-      provider: modelProvider as AuditOptions['model']['provider'],
-      model: modelName,
-      apiKey: apiKey || undefined,
-      baseUrl: undefined,
-    },
-    goal,
-    maxIterations,
-    apply,
-    allowOpenCritical: false,
-    output: 'text',
-    outputFile: undefined,
-    dbPath: process.env.CYBERPULSE_DB_PATH ?? 'data/cyberpulse.db',
-  };
-
-  // Build target config — avoid undefined fields (exactOptionalPropertyTypes)
+  // Run the audit (core orchestrator consumes the config below)
   const target =
     targetType === 'python-fn'
       ? ({ type: 'python-fn', pythonFn } as const)

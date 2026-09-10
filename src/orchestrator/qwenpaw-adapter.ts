@@ -79,7 +79,6 @@ import type { ModelClient } from '../model/types.js';
 import type { TargetAdapter } from '../targets/types.js';
 import type { AttackInput } from '../agents/attacker.js';
 import type { ValidatorInput } from '../agents/validator.js';
-import { getPayloads } from '../redteam/payloads/index.js';
 import type { OwaspId } from '../owasp/types.js';
 
 /**

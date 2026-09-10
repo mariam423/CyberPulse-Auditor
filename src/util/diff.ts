@@ -177,20 +177,17 @@ export function applyDiff(original: string, diff: string): string | null {
     }
 
     // Apply hunk body
-    let newIdx = hunk.newStart - 1;
     for (const line of hunk.body) {
       if (line.startsWith(' ') || line.startsWith('\\')) {
         // context line
         result.push(lines[oldIdx] ?? '');
         oldIdx++;
-        newIdx++;
       } else if (line.startsWith('-')) {
         // deleted line
         oldIdx++;
       } else if (line.startsWith('+')) {
         // added line
         result.push(line.substring(1));
-        newIdx++;
       }
     }
   }

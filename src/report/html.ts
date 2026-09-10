@@ -192,10 +192,6 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function escapeAttr(s: string): string {
-  return s.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
 /**
  * Format a CyberPulse run report as a self-contained, theme-aware HTML page.
  * No external dependencies except Google Fonts (optional).
@@ -212,7 +208,6 @@ export function formatHtml(report: RunReport): string {
     report.status === 'complete' ? 'Complete' :
     report.status === 'error' ? 'Error' : 'Partial';
 
-  const findingsDetails = report.findings.map(findingDetail).join('');
   const patchesDetails = report.patches.map(patchDetail).join('');
   const retestsDetails = report.retests.map(retestDetail).join('');
 

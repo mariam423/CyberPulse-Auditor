@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import { logger } from '../util/logger.js';
 import { loadCatalog } from './catalog.js';
 import type { OwaspId, Severity } from './types.js';

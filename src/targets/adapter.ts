@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import type { TargetAdapter, TargetConfig } from './types.js';
 import { TargetConfigSchema } from './types.js';
 import { HTTPTargetAdapter } from './adapters/http.js';

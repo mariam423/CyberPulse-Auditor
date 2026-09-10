@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import type { ModelClient, ModelConfig } from './types.js';
 import { ModelConfigSchema } from './types.js';
 import { OpenAIProvider } from './providers/openai.js';

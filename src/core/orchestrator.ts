@@ -7,6 +7,7 @@
  */
 
 import type { AuditConfig, ScanStatus, RunReport, OwaspId } from './types.js';
+import { asRunId } from '../util/ids.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { createModelClient } from '../model/provider.js';
 import { createTargetAdapter } from '../targets/adapter.js';
@@ -50,7 +51,6 @@ export async function runAudit(
 
   // Import and use the existing Orchestrator
   const { OrchestratorConfigSchema } = await import('../orchestrator/orchestrator.js');
-  const { OrchestratorConfigSchema: OrigSchema } = await import('../orchestrator/orchestrator.js');
 
   const cfg = OrchestratorConfigSchema.parse({
     goal: config.goal,
@@ -96,7 +96,7 @@ export async function listRuns(dbPath?: string): Promise<Array<{
   try {
     const runs = store.listRuns();
     return runs.map((r) => {
-      const findings = store.getFindingsByRun(r.id as any);
+      const findings = store.getFindingsByRun(asRunId(r.id));
       return {
         runId: r.id,
         status: r.status,
@@ -121,9 +121,9 @@ export async function getRun(runId: string, dbPath?: string): Promise<RunReport 
   const { SqliteStore } = await import('../store/sqlite.js');
   const store = new SqliteStore(dbPath);
   try {
-    const run = store.getRun(runId as any);
+    const run = store.getRun(asRunId(runId));
     if (!run) return null;
-    const findings = store.getFindingsByRun(runId as any);
+    const findings = store.getFindingsByRun(asRunId(runId));
     const config = JSON.parse(run.config_json);
     return {
       runId: run.id,
@@ -136,7 +136,7 @@ export async function getRun(runId: string, dbPath?: string): Promise<RunReport 
       findings: findings.map((f) => ({
         id: f.id,
         owaspId: f.owasp_id as OwaspId,
-        severity: f.severity as any,
+        severity: f.severity as RunReport['findings'][number]['severity'],
         title: f.title,
         evidence: f.evidence,
         repro: JSON.parse(f.repro_json),

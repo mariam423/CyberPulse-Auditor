@@ -3,7 +3,6 @@ import { Agent } from './base.js';
 import { logger } from '../util/logger.js';
 import { hardenPrompt } from '../remediation/prompt-hardener.js';
 import { createCodePatch, validateBlockingSchema } from '../remediation/code-patch.js';
-import type { Finding } from '../owasp/evaluator.js';
 import type { RemediationPlan, Patch, PromptPatch, CodePatch } from '../remediation/types.js';
 import type { OwaspId } from '../owasp/types.js';
 
@@ -107,7 +106,7 @@ export class Defender extends Agent<DefenderInput, DefenderOutput> {
       addressedFindings.push(finding.id);
 
       // For critical/high code-related vulnerabilities, also produce a CodePatch
-      const codeRelatedIds: OwaspId[] = ['LLM01', 'LLM02', 'LLM06'];
+      const codeRelatedIds: OwaspId[] = ['LLM01', 'LLM02', 'LLM05', 'LLM06'];
       const shouldProduceCodePatch =
         (finding.severity === 'critical' || finding.severity === 'high') &&
         codeRelatedIds.includes(owaspId);

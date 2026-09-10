@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FileText, Download, Copy, CheckCircle, AlertTriangle } from 'lucide-react';
+import { FileText, Download, Copy, CheckCircle, AlertTriangle, Shield } from 'lucide-react';
 import clsx from 'clsx';
 
 interface RunSummary {
@@ -121,19 +121,35 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        <button
-          onClick={generateReport}
-          disabled={!selectedRun || generating}
-          className={clsx(
-            'flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm transition-all',
-            !selectedRun || generating
-              ? 'bg-midnight-700 text-slate-500 cursor-not-allowed'
-              : 'bg-emerald-500 hover:bg-emerald-600 text-white'
-          )}
-        >
-          <Download className="w-4 h-4" />
-          {generating ? 'Generating...' : 'Generate Report'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={generateReport}
+            disabled={!selectedRun || generating}
+            className={clsx(
+              'flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm transition-all',
+              !selectedRun || generating
+                ? 'bg-midnight-700 text-slate-500 cursor-not-allowed'
+                : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+            )}
+          >
+            <Download className="w-4 h-4" />
+            {generating ? 'Generating...' : 'Generate Report'}
+          </button>
+
+          <a
+            href={selectedRun ? `/api/runs/${selectedRun}/sarif` : undefined}
+            aria-disabled={!selectedRun}
+            className={clsx(
+              'flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm border transition-all',
+              !selectedRun
+                ? 'bg-midnight-700 text-slate-500 border-midnight-600 cursor-not-allowed pointer-events-none'
+                : 'bg-midnight-700 text-cyan-300 border-cyan-500/40 hover:border-cyan-400 hover:text-cyan-200'
+            )}
+          >
+            <Shield className="w-4 h-4" />
+            Download SARIF 2.1.0
+          </a>
+        </div>
       </div>
 
       {/* Report output */}

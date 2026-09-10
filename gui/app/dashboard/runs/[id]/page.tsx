@@ -98,7 +98,7 @@ export default function RunDetailPage() {
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-white font-mono">{run.runId.slice(0, 16)}…</h1>
             <span className={clsx(
               'px-2 py-0.5 rounded text-xs font-bold border',
@@ -108,6 +108,13 @@ export default function RunDetailPage() {
             )}>
               {run.status.toUpperCase()}
             </span>
+            <a
+              href={`/api/runs/${run.runId}/sarif`}
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold border border-cyan-500/40 text-cyan-300 bg-midnight-700 hover:border-cyan-400 hover:text-cyan-200 transition-colors"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              SARIF 2.1.0
+            </a>
           </div>
           <p className="text-slate-400 text-sm mt-1">{run.goal}</p>
         </div>

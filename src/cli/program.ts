@@ -16,7 +16,7 @@ import { formatSarif } from '../report/sarif.js';
 import { formatHtml } from '../report/html.js';
 import { formatJson } from '../report/json.js';
 import { formatTextReport } from '../report/text.js';
-import { newRetestId } from '../util/ids.js';
+import { newRetestId, asRunId, asFindingId } from '../util/ids.js';
 import type { RunId, FindingId } from '../util/ids.js';
 import type { RunReport } from '../report/types.js';
 import { z } from 'zod';
@@ -41,6 +41,8 @@ export const AuditOptionsSchema = z.object({
   output: z.enum(['json', 'markdown', 'sarif', 'text', 'html']).default('text'),
   outputFile: z.string().optional(),
   dbPath: z.string().optional(),
+  patchRoot: z.string().optional(),
+  dryRunPatches: z.boolean().default(false),
 });
 
 export type AuditOptions = z.infer<typeof AuditOptionsSchema>;
@@ -58,13 +60,7 @@ function writeOutput(content: string, outputFile?: string): void {
 }
 
 function writeJson(content: string, outputFile?: string): void {
-  if (outputFile) {
-    const resolved = resolve(outputFile);
-    writeFileSync(resolved, content, 'utf-8');
-    ui.success(`Report saved → ${resolved}`);
-  } else {
-    console.log(content);
-  }
+  writeOutput(content, outputFile);
 }
 
 // ── Audit run ────────────────────────────────────────────────────────────────
@@ -73,24 +69,10 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
   // Section header
   ui.section('Initializing Security Audit');
 
-  // Show OWASP categories being probed
-  const catalog = loadCatalog();
-  const owaspIds = Array.from(catalog.keys());
-  console.log(`  Targeting ${owaspIds.length} OWASP LLM categories:`);
-  ui.owaspBanner(owaspIds);
-  ui.blank();
-
-  ui.kv('Goal', chalk.white(opts.goal));
-  ui.kv('Target', chalk.cyan(`${opts.target.type}: ${opts.target.url ?? opts.target.pythonFn ?? 'unknown'}`));
-  ui.kv('Model', chalk.cyan(`${opts.model.provider}/${opts.model.model}`));
-  ui.kv('Iterations', chalk.white(`${opts.maxIterations}`));
-  ui.kv('Output', chalk.white(opts.output.toUpperCase()));
-  ui.blank();
-
-  // Step tracker for the audit pipeline
+  // Step tracker for the audit pipeline — drives the spinner + ✔ stamps
   const steps = new StepTracker([
-    'Loading OWASP catalog',
-    'Initializing target adapter',
+    'Initializing OWASP Catalog',
+    'Analyzing target adapter',
     'Initializing model client',
     'Running attack phase',
     'Evaluating findings',
@@ -100,13 +82,21 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
   ]);
 
   // ── Init ──────────────────────────────────────────────────────
-  steps.start('Loading OWASP catalog');
-  steps.done('Loading OWASP catalog');
-  ui.success(`Loaded ${catalog.size} OWASP entries`);
+  steps.start('Initializing OWASP Catalog');
+  const catalog = loadCatalog();
+  const owaspIds = Array.from(catalog.keys());
+  steps.doneWith('Initializing OWASP Catalog', `${catalog.size} entries`);
 
-  steps.start('Initializing target adapter');
+  // Show OWASP categories being probed + run config, compactly
+  ui.kv('Goal', chalk.white(opts.goal));
+  ui.kv('Target', chalk.cyan(`${opts.target.type}: ${opts.target.url ?? opts.target.pythonFn ?? 'unknown'}`));
+  ui.kv('Model', chalk.cyan(`${opts.model.provider}/${opts.model.model}`));
+  ui.kv('Categories', `${chalk.white(String(owaspIds.length))}  ` + owaspIds.map((id) => (OWASP_COLOR[id] ?? chalk.white)(id)).join(chalk.gray(' · ')));
+  ui.blank();
+
+  steps.start('Analyzing target adapter');
   const target = createTargetAdapter({ ...opts.target, timeout: 30_000 });
-  steps.done('Initializing target adapter');
+  steps.doneWith('Analyzing target adapter', target.id);
 
   steps.start('Initializing model client');
   const model = createModelClient({
@@ -114,7 +104,7 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
     timeout: 60_000,
     maxRetries: 3,
   });
-  steps.done('Initializing model client');
+  steps.doneWith('Initializing model client', `${opts.model.provider}/${opts.model.model}`);
 
   // ── Build config ───────────────────────────────────────────────
   const config = OrchestratorConfigSchema.parse({
@@ -128,40 +118,103 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
   });
 
   // ── Run ────────────────────────────────────────────────────────
-  ui.section('Running Closed-Loop Audit');
-  steps.start('Running attack phase');
-
   const orchestrator = new Orchestrator(config, model, target, opts.dbPath);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let result: Awaited<ReturnType<typeof orchestrator.run> >;
+  let result: Awaited<ReturnType<typeof orchestrator.run>>;
   try {
-    ui.pulse('Attacking target across all OWASP categories...');
+    steps.start('Running attack phase');
     result = await orchestrator.run(opts.output as AuditOutputFormat);
-    ui.clearPulse();
-    steps.done('Running attack phase');
+    steps.doneWith('Running attack phase', `${result.findings.length} findings · ${result.iterations} iterations`);
 
     steps.start('Evaluating findings');
-    steps.done('Evaluating findings');
+    steps.doneWith('Evaluating findings', `${result.findings.length} evaluated`);
     steps.start('Generating patches');
-    steps.done('Generating patches');
+    steps.doneWith('Generating patches', `${result.patches.length} patches`);
     steps.start('Running retest validation');
-    steps.done('Running retest validation');
+    const closedCount = result.retests.filter((r) => r.verdict === 'closed').length;
+    steps.doneWith('Running retest validation', `${closedCount}/${result.retests.length} closed`);
+
+    // ── Autonomous auto-patch (only when --apply was requested) ──────
+    if (opts.apply && result.patches.length > 0) {
+      steps.start('Applying code patches');
+      const { autoApplyPatches } = await import('../remediation/patch-applier.js');
+      const { Defender } = await import('../agents/defender.js');
+
+      // Re-run the deterministic Defender over the findings to obtain full
+      // code patches (file + diff + zodSchema) — PatchReports carry summaries only.
+      const defender = new Defender();
+      const defenderOutput = await defender.run({
+        findings: result.findings.map((f) => ({
+          id: f.id,
+          owaspId: f.owaspId as 'LLM01' | 'LLM02' | 'LLM03' | 'LLM04' | 'LLM05' | 'LLM06' | 'LLM07' | 'LLM08' | 'LLM09' | 'LLM10',
+          severity: f.severity as 'critical' | 'high' | 'medium' | 'low' | 'info',
+          title: f.title,
+          evidence: f.evidence,
+          repro: f.repro as { payload: string; target: string; expected: string },
+        })),
+        systemPrompt: 'You are a helpful AI assistant.',
+      });
+
+      const normalizedPatches = defenderOutput.plan.patches
+        .filter((p): p is typeof p & { kind: 'code' } => p.kind === 'code')
+        .map((p) => ({
+          kind: 'code' as const,
+          owaspId: p.owaspId,
+          file: p.file ?? 'src/handler.ts',
+          diff: p.diff ?? '',
+          zodSchema: p.zodSchema ?? '',
+          rationale: p.rationale ?? '',
+          requiresRestart: p.requiresRestart ?? false,
+        }));
+
+      const attackByFile: Record<string, string> = {};
+      for (const f of result.findings) {
+        for (const p of normalizedPatches) {
+          if (p.owaspId === f.owaspId) {
+            attackByFile[p.file] = f.repro.payload;
+          }
+        }
+      }
+
+      const patchRoot = opts.patchRoot ?? process.cwd();
+      const autoResult = autoApplyPatches(
+        normalizedPatches,
+        attackByFile,
+        patchRoot,
+        { dryRun: opts.dryRunPatches }
+      );
+      const suffix = opts.dryRunPatches
+        ? `${autoResult.approved} reviewed (dry-run)`
+        : `${autoResult.applied} applied · ${autoResult.rejected.length} rejected`;
+      if (autoResult.applied > 0 || opts.dryRunPatches) {
+        steps.doneWith('Applying code patches', suffix);
+      } else {
+        steps.skip('Applying code patches');
+      }
+    }
   } finally {
     orchestrator.close();
   }
 
   // ── Results ────────────────────────────────────────────────────
-  ui.section('Audit Complete');
-  steps.render();
-  ui.blank();
+  steps.start('Formatting report');
+  if (opts.outputFile) {
+    writeOutput(result.output, opts.outputFile);
+    steps.doneWith('Formatting report', `saved to ${opts.outputFile}`);
+  } else if (opts.output === 'text') {
+    steps.doneWith('Formatting report', 'text');
+    console.log(result.output);
+  } else {
+    steps.done('Formatting report');
+    writeOutput(result.output, opts.outputFile);
+  }
 
-  const open = result.findings.filter((f) => !f.closed);
-  const closed = result.findings.filter((f) => f.closed);
+  ui.section('Audit Complete');
+
   const critical = result.findings.filter((f) => f.severity === 'critical' && !f.closed);
 
   ui.kv('Run ID', chalk.white(result.runId));
-  ui.kv('Status', result.status === 'complete' ? chalk.green('complete') : (chalk as any).hex('#f97316')(result.status));
+  ui.kv('Status', result.status === 'complete' ? chalk.green('complete') : hex('#f97316')(result.status));
   ui.kv('Iterations', chalk.white(`${result.iterations}`));
   ui.kv('Findings', chalk.white(`${result.findings.length}`));
   ui.kv('Patches', chalk.white(`${result.patches.length}`));
@@ -190,22 +243,9 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
     }
     ui.blank();
   }
-
-  // Output
-  if (opts.outputFile) {
-    steps.start('Formatting report');
-    writeOutput(result.output, opts.outputFile);
-    steps.done('Formatting report');
-  } else {
-    if (opts.output === 'text') {
-      steps.start('Formatting report');
-      console.log(result.output);
-      steps.done('Formatting report');
-    } else {
-      writeOutput(result.output, opts.outputFile);
-    }
-  }
 }
+
+const hex = (c: string) => chalk.hex(c);
 
 // ── GUI command ────────────────────────────────────────────────────────────────
 
@@ -230,6 +270,14 @@ async function guiCommand(opts: { port?: number; open?: boolean }): Promise<void
   });
 }
 
+// ── Verbosity helpers ──────────────────────────────────────────────────────────
+
+/** Flip the structured logger to verbose (info+) or debug (debug+) mode. */
+function applyVerbosity(verbose: boolean, debug: boolean): void {
+  if (debug) logger.enableDebug();
+  else if (verbose) logger.enableVerbose();
+}
+
 // ── Program builder ────────────────────────────────────────────────────────────
 
 export function buildProgram(): Command {
@@ -246,7 +294,10 @@ export function buildProgram(): Command {
     .description('Launch the CyberPulse GUI dashboard (Next.js web UI)')
     .option('--port <n>', 'Port to run the GUI on', '3000')
     .option('--no-open', 'Do not open the browser automatically')
+    .option('--verbose', 'Show verbose internal logs (stderr)')
+    .option('--debug', 'Show full debug internal logs (stderr)')
     .action(async (opts) => {
+      applyVerbosity(Boolean(opts.verbose), Boolean(opts.debug));
       try {
         await guiCommand({ port: parseInt(opts.port, 10), open: opts.open });
       } catch (err) {
@@ -276,10 +327,15 @@ export function buildProgram(): Command {
     .option('--max-iterations <n>', 'Max attack/defend iterations', '3')
     .option('--apply', 'Auto-apply patches (default: propose only)')
     .option('--allow-open-critical', 'Allow reporting with open Critical findings')
+    .option('--patch-root <dir>', 'Root directory for --apply code patches (default: cwd)', '.')
+    .option('--dry-run-patches', 'Review + harden code patches without writing to disk')
     .option('--output <format>', 'Output format: json | text | markdown | sarif | html', 'text')
     .option('--output-file <path>', 'Write report to file instead of stdout')
     .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
+    .option('--verbose', 'Show verbose internal logs (stderr)')
+    .option('--debug', 'Show full debug internal logs (stderr)')
     .action(async (opts) => {
+      applyVerbosity(Boolean(opts.verbose), Boolean(opts.debug));
       try {
         const options = AuditOptionsSchema.parse({
           target: {
@@ -301,6 +357,8 @@ export function buildProgram(): Command {
           output: opts.output,
           outputFile: opts.outputFile,
           dbPath: opts.dbPath,
+          patchRoot: opts.patchRoot,
+          dryRunPatches: opts.dryRunPatches ?? false,
         });
 
         await runAudit(options);
@@ -324,27 +382,42 @@ export function buildProgram(): Command {
     .option('--output <format>', 'Output format: json | text', 'text')
     .option('--output-file <path>', 'Write report to file instead of stdout')
     .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
+    .option('--verbose', 'Show verbose internal logs (stderr)')
+    .option('--debug', 'Show full debug internal logs (stderr)')
     .action(async (opts) => {
+      applyVerbosity(Boolean(opts.verbose), Boolean(opts.debug));
       try {
         ui.section('Retest Validation');
+        const steps = new StepTracker([
+          'Loading run',
+          'Resolving finding',
+          'Running retest validation',
+        ]);
+
         const store = new SqliteStore(opts.dbPath);
 
-        const run = store.getRun(opts.run as any);
+        steps.start('Loading run');
+        const run = store.getRun(asRunId(opts.run));
         if (!run) {
+          steps.fail('Loading run');
           ui.error(`Run ${opts.run as string} not found`);
           store.close();
           process.exit(1);
         }
+        steps.doneWith('Loading run', run.id);
 
-        const findings = store.getFindingsByRun(opts.run as any);
+        steps.start('Resolving finding');
+        const findings = store.getFindingsByRun(asRunId(opts.run));
         const finding = findings.find((f) => f.id === opts.finding);
         if (!finding) {
+          steps.fail('Resolving finding');
           ui.error(`Finding ${opts.finding as string} not found in run ${opts.run as string}`);
           store.close();
           process.exit(1);
         }
+        steps.doneWith('Resolving finding', finding.owasp_id);
 
-        const patches = store.getPatchesByFinding(opts.finding as any);
+        const patches = store.getPatchesByFinding(asFindingId(opts.finding));
 
         let targetConfig: Record<string, unknown> = {};
         try { targetConfig = JSON.parse(run.target); } catch { /* ignore */ }
@@ -363,8 +436,9 @@ export function buildProgram(): Command {
         ui.kv('Run', chalk.white(run.id));
         ui.kv('Finding', `${(OWASP_COLOR[finding.owasp_id] ?? chalk.white)(finding.owasp_id)} — ${finding.title}`);
         ui.kv('Retesting with', patchedSystemPrompt ? chalk.green('patched prompt') : chalk.gray('original prompt'));
+        ui.blank();
 
-        ui.pulse('Running retest validation...');
+        steps.start('Running retest validation');
 
         const { Validator } = await import('../agents/validator.js');
         const validator = new Validator(target);
@@ -379,7 +453,7 @@ export function buildProgram(): Command {
         });
 
         const output = await validator.run(input);
-        ui.clearPulse();
+        steps.doneWith('Running retest validation', `${output.verdict} (${output.attempts.length} attempts)`);
 
         store.addRetest({
           id: newRetestId(),
@@ -390,7 +464,7 @@ export function buildProgram(): Command {
           evidence: output.evidence,
         });
 
-        const verdictColor = output.verdict === 'closed' ? chalk.green : output.verdict === 'open' ? chalk.red : (chalk as any).hex('#f97316');
+        const verdictColor = output.verdict === 'closed' ? chalk.green : output.verdict === 'open' ? chalk.red : hex('#f97316');
         const verdictIcon = output.verdict === 'closed' ? STATUS.tick : output.verdict === 'open' ? STATUS.cross : STATUS.warn;
 
         ui.blank();
@@ -446,24 +520,36 @@ export function buildProgram(): Command {
     .requiredOption('--format <format>', 'Report format: json | markdown | sarif | html | text', 'text')
     .option('--output-file <path>', 'Write report to file instead of stdout')
     .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
+    .option('--verbose', 'Show verbose internal logs (stderr)')
+    .option('--debug', 'Show full debug internal logs (stderr)')
     .action(async (opts) => {
+      applyVerbosity(Boolean(opts.verbose), Boolean(opts.debug));
       try {
         ui.section('Generating Report');
+        const steps = new StepTracker([
+          'Loading run',
+          'Formatting report',
+        ]);
+
         const store = new SqliteStore(opts.dbPath);
 
-        const run = store.getRun(opts.run as any);
+        steps.start('Loading run');
+        const run = store.getRun(asRunId(opts.run));
         if (!run) {
+          steps.fail('Loading run');
           ui.error(`Run ${opts.run as string} not found`);
           store.close();
           process.exit(1);
         }
 
-        const findings = store.getFindingsByRun(opts.run as any);
+        const findings = store.getFindingsByRun(asRunId(opts.run));
+        steps.doneWith('Loading run', `${run.id} · ${findings.length} findings`);
 
         ui.kv('Run ID', chalk.white(run.id));
-        ui.kv('Status', run.status === 'complete' ? chalk.green('complete') : (chalk as any).hex('#f97316')(run.status));
+        ui.kv('Status', run.status === 'complete' ? chalk.green('complete') : hex('#f97316')(run.status));
         ui.kv('Findings', chalk.white(`${findings.length}`));
         ui.kv('Format', chalk.white(opts.format.toUpperCase()));
+        ui.blank();
 
         const config = JSON.parse(run.config_json);
         const reportRun: RunReport = {
@@ -487,10 +573,9 @@ export function buildProgram(): Command {
           retests: [],
         };
 
-        ui.blank();
-        ui.pulse(`Formatting as ${opts.format.toUpperCase()}...`);
+        steps.start('Formatting report');
         const output = selectFormat(reportRun, opts.format as AuditOutputFormat);
-        ui.clearPulse();
+        steps.doneWith('Formatting report', opts.format.toUpperCase());
 
         writeOutput(output, opts.outputFile);
         ui.blank();

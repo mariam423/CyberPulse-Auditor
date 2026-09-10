@@ -1,13 +1,10 @@
 import Database from 'better-sqlite3';
 import { resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { z } from 'zod';
 import { logger } from '../util/logger.js';
-import { OwaspIdSchema, SeveritySchema } from '../owasp/types.js';
 import type { RunId, FindingId, PatchId, RetestId } from '../util/ids.js';
 
-const RunStatusSchema = z.enum(['running', 'partial', 'complete', 'error']);
-type RunStatus = z.infer<typeof RunStatusSchema>;
+type RunStatus = 'running' | 'partial' | 'complete' | 'error';
 
 interface RunRow {
   id: string;
@@ -16,15 +13,6 @@ interface RunRow {
   status: RunStatus;
   started_at: string;
   finished_at: string | null;
-}
-
-interface AttemptRow {
-  id: string;
-  run_id: string;
-  agent: string;
-  payload: string;
-  response: string;
-  ts: string;
 }
 
 interface FindingRow {
@@ -49,21 +37,17 @@ interface PatchRow {
   rationale: string;
 }
 
-interface RetestRow {
-  id: string;
-  run_id: string;
-  finding_id: string;
-  closed: number;
-  attempts_json: string;
-  evidence: string;
-  ts: string;
-}
-
 export class SqliteStore {
   private readonly db: Database.Database;
 
   constructor(dbPath?: string) {
-    const resolved = resolve(dbPath ?? process.cwd(), 'data/cyberpulse.db');
+    // dbPath may be:
+    //   - a direct database file path (e.g. "data/cyberpulse.db", "/tmp/x.db")
+    //   - a base directory (legacy cwd-style) → append data/cyberpulse.db
+    //   - omitted → <cwd>/data/cyberpulse.db
+    const resolved = dbPath
+      ? resolve(dbPath.endsWith('.db') || dbPath.endsWith('.sqlite') ? dbPath : resolve(dbPath, 'data/cyberpulse.db'))
+      : resolve(process.cwd(), 'data/cyberpulse.db');
     mkdirSync(resolve(resolved, '..'), { recursive: true });
     this.db = new Database(resolved);
     this.db.pragma('journal_mode = WAL');

@@ -1,17 +1,5 @@
 import type { RunReport } from './types.js';
 
-const SEVERITY_COLOR: Record<string, string> = {
-  critical: 'red',
-  high: 'rgb(255,165,0)',
-  medium: 'yellow',
-  low: 'green',
-  info: 'blue',
-};
-
-function sevColor(severity: string): string {
-  return SEVERITY_COLOR[severity] ?? 'gray';
-}
-
 /**
  * Format a CyberPulse run report as a terminal-friendly text report.
  * Uses ANSI color codes for readability in the terminal.

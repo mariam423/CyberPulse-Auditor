@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { Agent } from './base.js';
 import { logger } from '../util/logger.js';
 import type { TargetAdapter, TargetTurn } from '../targets/types.js';
-import type { AttackResult, AttackTurn } from '../redteam/types.js';
 
 export const ValidatorInputSchema = z.object({
   /** Finding to retest */
@@ -118,7 +117,7 @@ export class Validator extends Agent<ValidatorInput, ValidatorOutput> {
         const response = await this.target.call(turns);
         const passed = this.isAttackBlocked(response, payload);
         results.push({ payload, response, passed });
-      } catch (err) {
+      } catch {
         results.push({
           payload,
           response: '',

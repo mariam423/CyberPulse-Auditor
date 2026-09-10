@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import { Agent } from './base.js';
 import { logger } from '../util/logger.js';
-import type { TargetAdapter } from '../targets/types.js';
-import type { AttackPlan } from '../redteam/types.js';
 
 /**
  * Orchestrator Agent — QwenPaw kernel agent.
