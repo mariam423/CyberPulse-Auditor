@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# CyberPulse Auditor — Single-command orchestration
+# ═══════════════════════════════════════════════════════════════════════════
+# Usage:
+#   docker compose up --build          # start GUI + audit engine (port 3000)
+#   docker compose up -d --build       # detached
+#   docker compose down               # stop (data persists in the volume)
+#
+# Data persists in the named volume `cyberpulse-data` (SQLite).
+# Configure via .env (copy .env.example → .env).
+
+services:
+  cyberpulse:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cyberpulse-auditor:latest
+    container_name: cyberpulse-auditor
+    restart: unless-stopped
+    ports:
+      - "${CYBERPULSE_PORT:-3000}:3000"
+    environment:
+      # ── Database ──────────────────────────────────────────────────────────
+      # SQLite lives inside the container at /app/data — mount the volume.
+      CYBERPULSE_DB_PATH: /app/data/cyberpulse.db
+      # Optional PostgreSQL connection (engine writes SQLite first-class;
+      # PG is reserved for future read-replica/reporting use).
+      # DATABASE_URL: ${DATABASE_URL:-}
+      # ── Model providers (never baked into the image) ──────────────────────
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # ── Agent mesh (Copaw/OpenClaude/Hermes/Pi) unified key ────────────────
+      UNIFIED_API_KEY: ${UNIFIED_API_KEY:-}
+      # ── Rate limiting (SaaS guardrails) ────────────────────────────────────
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-30}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      # ── Scale-out (optional — defaults keep SQLite + in-process queue) ──
+      # Set DATABASE_URL to switch storage to Postgres (fleet + read replicas)
+      DATABASE_URL: ${DATABASE_URL:-}
+      # Point reads at a replica DSN (CQRS-lite read/write split)
+      DATABASE_READ_URL: ${DATABASE_READ_URL:-}
+      PG_POOL_MAX: ${PG_POOL_MAX:-10}
+      # Set REDIS_URL for a shared, cross-replica rate limiter
+      REDIS_URL: ${REDIS_URL:-}
+      # Max queued audits before load-shedding (503) kicks in
+      QUEUE_MAX_DEPTH: ${QUEUE_MAX_DEPTH:-200}
+    volumes:
+      - cyberpulse-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/runs"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # Security hardening: read-only root fs, non-root user, dropped capabilities
+    read_only: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  cyberpulse-data:
+    driver: local

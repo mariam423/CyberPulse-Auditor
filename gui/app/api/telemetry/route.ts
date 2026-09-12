@@ -13,6 +13,7 @@
  */
 import { NextResponse } from 'next/server';
 import { listRuns, getRun } from '@/lib/db';
+import { withRateLimit } from '@/lib/api-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,7 +61,7 @@ function statusToPhase(status: string): AgentState['state'] {
   return 'idle';
 }
 
-export async function GET() {
+async function handleTelemetry(): Promise<NextResponse> {
   try {
     const runs = listRuns();
     const newest = runs[0];
@@ -147,3 +148,6 @@ export async function GET() {
     );
   }
 }
+
+// Telemetry is polled every 3s by the live page — generous window.
+export const GET = withRateLimit('telemetry', handleTelemetry, { max: 120, windowMs: 60_000 });

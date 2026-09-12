@@ -88,18 +88,18 @@ export default function RunDetailPage() {
   const closedFindings = run.findings.filter((f) => f.closed);
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Header */}
       <div className="flex items-start gap-4">
         <Link
           href="/dashboard/runs"
-          className="mt-1 p-2 rounded-lg bg-midnight-700 border border-midnight-600 text-slate-400 hover:text-white transition-colors"
+          className="mt-1 p-2 rounded-lg bg-obsidian-700 border border-obsidian-600 text-slate-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-white font-mono">{run.runId.slice(0, 16)}…</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-white font-mono">{run.runId.slice(0, 16)}…</h1>
             <span className={clsx(
               'px-2 py-0.5 rounded text-xs font-bold border',
               run.status === 'complete' ? 'bg-green-500/15 text-green-400 border-green-500/30' :
@@ -110,7 +110,7 @@ export default function RunDetailPage() {
             </span>
             <a
               href={`/api/runs/${run.runId}/sarif`}
-              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold border border-cyan-500/40 text-cyan-300 bg-midnight-700 hover:border-cyan-400 hover:text-cyan-200 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold border border-cyan-500/40 text-cyan-300 bg-obsidian-700 hover:border-cyan-400 hover:text-cyan-200 transition-colors"
             >
               <Shield className="w-3.5 h-3.5" />
               SARIF 2.1.0
@@ -119,7 +119,7 @@ export default function RunDetailPage() {
               <a
                 key={fmt}
                 href={`/api/report/${run.runId}?format=${fmt}&download=1`}
-                className="px-3 py-1 rounded text-xs font-semibold border border-midnight-600 text-slate-400 bg-midnight-700 hover:border-emerald-500/40 hover:text-emerald-300 transition-colors"
+                className="px-3 py-1 rounded text-xs font-semibold border border-obsidian-600 text-slate-400 bg-obsidian-700 hover:border-emerald-500/40 hover:text-emerald-300 transition-colors"
               >
                 {fmt.toUpperCase()}
               </a>
@@ -171,7 +171,7 @@ export default function RunDetailPage() {
                   key={finding.id}
                   className={clsx(
                     'card-glass rounded-xl overflow-hidden border transition-all',
-                    isSelected ? 'border-emerald-500/30' : 'border-midnight-700',
+                    isSelected ? 'border-emerald-500/30' : 'border-obsidian-700',
                   )}
                 >
                   <button
@@ -194,7 +194,7 @@ export default function RunDetailPage() {
                   </button>
 
                   {isSelected && (
-                    <div className="px-5 pb-5 border-t border-midnight-700 pt-4 space-y-4 animate-slide-up">
+                    <div className="px-5 pb-5 border-t border-obsidian-700 pt-4 space-y-4 animate-slide-up">
                       <div>
                         <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">OWASP Category</p>
                         <p className={clsx('font-mono text-sm font-bold', OWASP_COLORS[finding.owaspId] ?? 'text-white')}>
@@ -204,14 +204,14 @@ export default function RunDetailPage() {
 
                       <div>
                         <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Reproduction Payload</p>
-                        <pre className="bg-midnight-950 rounded-lg p-3 text-sm text-red-300 font-mono overflow-x-auto">
+                        <pre className="bg-obsidian-950 rounded-lg p-3 text-sm text-red-300 font-mono overflow-x-auto">
                           {finding.repro.payload}
                         </pre>
                       </div>
 
                       <div>
                         <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Evidence</p>
-                        <pre className="bg-midnight-950 rounded-lg p-3 text-sm text-slate-300 font-mono overflow-x-auto">
+                        <pre className="bg-obsidian-950 rounded-lg p-3 text-sm text-slate-300 font-mono overflow-x-auto">
                           {finding.evidence || '(no evidence captured)'}
                         </pre>
                       </div>

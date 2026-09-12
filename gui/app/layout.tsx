@@ -12,11 +12,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen bg-midnight-900 text-slate-100 antialiased">
-        {/* Subtle grid background */}
-        <div className="fixed inset-0 bg-grid pointer-events-none" />
-        {/* Top accent bar */}
-        <div className="fixed top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent pointer-events-none z-50" />
+      <body className="min-h-screen bg-obsidian-900 text-slate-100 antialiased">
+        {/* Subtle amber grid background */}
+        <div className="fixed inset-0 bg-grid pointer-events-none" aria-hidden="true" />
+        {/* Top accent bar — amber → emerald security gradient */}
+        <div
+          className="fixed top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-500/60 to-transparent pointer-events-none z-50"
+          aria-hidden="true"
+        />
         {children}
       </body>
     </html>

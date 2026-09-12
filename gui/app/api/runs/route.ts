@@ -1,13 +1,15 @@
 /**
  * GET /api/runs — List all audit runs
+ * Guardrails: rate-limited, no-store cache policy.
  */
 import { NextResponse } from 'next/server';
 import { listRuns } from '@/lib/db';
+import { withRateLimit } from '@/lib/api-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+async function handle(): Promise<NextResponse> {
   try {
     const runs = listRuns();
     return NextResponse.json({ runs });
@@ -19,3 +21,5 @@ export async function GET() {
     );
   }
 }
+
+export const GET = withRateLimit('runs', handle);

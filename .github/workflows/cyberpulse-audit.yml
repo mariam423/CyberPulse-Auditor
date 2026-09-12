@@ -38,7 +38,6 @@ permissions:
   contents: read
   pull-requests: read
   checks: write
-  security-events: write
 
 # Cancel superseded runs on the same PR (save CI minutes).
 concurrency:
@@ -167,3 +166,50 @@ jobs:
           path: /tmp/cyberpulse-smoke-report.json
           if-no-files-found: ignore
           retention-days: 14
+
+  # ── Responsive + API-guardrail e2e (Playwright + Chromium) ────────────────
+  responsive-e2e:
+    name: Responsive UI + SaaS Guardrails (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            gui/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install GUI dependencies
+        working-directory: gui
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: gui
+        run: npx playwright install chromium --with-deps
+
+      - name: Build GUI (production)
+        working-directory: gui
+        run: npm run build
+
+      - name: Run responsive + guardrail e2e suite
+        working-directory: gui
+        run: npx playwright test e2e/responsive.spec.ts --reporter=line
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-artifacts
+          path: gui/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

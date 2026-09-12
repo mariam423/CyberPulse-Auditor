@@ -4,6 +4,8 @@
  * Mirrors `cyberpulse retest --run <id> --finding <id>` one-to-one:
  * same store lookups, same patched-prompt selection, same Validator
  * invocation, same retest persistence, same JSON result shape.
+ *
+ * Guardrails: rate-limited, Zod-validated body, safe error responses.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { resolve } from 'node:path';
@@ -13,6 +15,7 @@ import { createTargetAdapter } from '@shared/targets/adapter.js';
 import { Validator, ValidatorInputSchema } from '@shared/agents/validator.js';
 import { newRetestId, asRunId, asFindingId } from '@shared/util/ids.js';
 import type { RunId, FindingId } from '@shared/util/ids.js';
+import { withRateLimit, parseJsonBody, BodyValidationError } from '@/lib/api-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,10 +32,11 @@ function rootDbPath(): string | undefined {
   return process.env.CYBERPULSE_DB_PATH || resolve(process.cwd(), '../data/cyberpulse.db');
 }
 
-export async function POST(req: NextRequest) {
+async function handleRetest(req: NextRequest): Promise<NextResponse> {
   let store: SqliteStore | null = null;
   try {
-    const body = RetestRequestSchema.parse(await req.json());
+    // Guardrail: Zod-validated, size-capped JSON body
+    const body = await parseJsonBody(req, RetestRequestSchema);
     store = new SqliteStore(rootDbPath());
 
     // Same lookup sequence as the CLI retest command
@@ -99,6 +103,9 @@ export async function POST(req: NextRequest) {
       retestedWith: patchedSystemPrompt ? 'patched prompt' : 'original prompt',
     });
   } catch (err) {
+    if (err instanceof BodyValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error('[api/retest] Error:', err);
     if (err instanceof z.ZodError) {
       return NextResponse.json(
@@ -114,3 +121,6 @@ export async function POST(req: NextRequest) {
     store?.close();
   }
 }
+
+// Expensive mutating route: strict limiter (10 retests / minute / IP).
+export const POST = withRateLimit('retest', handleRetest, { max: 10, windowMs: 60_000 });

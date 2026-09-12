@@ -1,21 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --emerald: #10b981;
+  /* CyberPulse "Obsidian" palette */
+  --obsidian-900: #090A0F;
+  --obsidian-800: #111319;
+  --obsidian-700: #1A1D26;
+  --amber: #F59E0B;
+  --amber-glow: rgba(245, 158, 11, 0.35);
+  --emerald: #10B981;
   --emerald-glow: rgba(16, 185, 129, 0.4);
-  --severity-critical: #dc2626;
-  --severity-high: #f97316;
-  --severity-medium: #eab308;
-  --severity-low: #22c55e;
-  --severity-info: #3b82f6;
+  --severity-critical: #DC2626;
+  --severity-high: #F59E0B;
+  --severity-medium: #EAB308;
+  --severity-low: #10B981;
+  --severity-info: #38BDF8;
 }
 
 * {
   box-sizing: border-box;
+  min-width: 0; /* flex children can always shrink — prevents overflow */
 }
 
 html {
@@ -24,55 +31,96 @@ html {
 
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  background-color: #0a0f1e;
-  color: #f1f5f9;
+  background-color: var(--obsidian-900);
+  color: #F1F5F9;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden; /* page never scrolls horizontally */
 }
 
-/* Custom scrollbar */
+/* ── Accessibility: visible focus states (keyboard nav) ─────────────────── */
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* ── Custom scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #111827;
+  background: var(--obsidian-800);
 }
 ::-webkit-scrollbar-thumb {
-  background: #10b98144;
+  background: rgba(245, 158, 11, 0.3);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #10b98188;
+  background: rgba(245, 158, 11, 0.5);
 }
 
-/* Selection */
+/* Selection — amber highlight */
 ::selection {
-  background: rgba(16, 185, 129, 0.3);
-  color: #f1f5f9;
+  background: rgba(245, 158, 11, 0.3);
+  color: #F1F5F9;
 }
 
-/* Grid background pattern */
+/* ── Theme primitives ─────────────────────────────────────────────────────── */
+
+/* Amber grid background (replaces emerald grid) */
 .bg-grid {
   background-size: 32px 32px;
   background-image:
-    linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(245, 158, 11, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245, 158, 11, 0.03) 1px, transparent 1px);
 }
 
-/* Emerald glow text */
-.text-glow {
+.text-glow-amber {
+  text-shadow: 0 0 20px var(--amber-glow);
+}
+.text-glow-emerald {
   text-shadow: 0 0 20px var(--emerald-glow);
 }
 
-/* Card glass effect */
+/* Obsidian card — high-contrast glass */
 .card-glass {
-  background: rgba(17, 24, 39, 0.8);
+  background: rgba(17, 19, 25, 0.85);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.08);
+}
+.card-glass:hover {
+  border-color: rgba(245, 158, 11, 0.18);
 }
 
-/* Severity badges */
+/* ── Loading skeletons (shimmer) ─────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(26, 29, 38, 0.6) 25%,
+    rgba(38, 42, 54, 0.9) 50%,
+    rgba(26, 29, 38, 0.6) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Severity badges ──────────────────────────────────────────────────────── */
 .severity-critical { color: var(--severity-critical); }
 .severity-high     { color: var(--severity-high); }
 .severity-medium   { color: var(--severity-medium); }
@@ -80,19 +128,63 @@ body {
 .severity-info     { color: var(--severity-info); }
 
 .bg-severity-critical { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.3); }
-.bg-severity-high     { background: rgba(249, 115, 22, 0.15); border-color: rgba(249, 115, 22, 0.3); }
+.bg-severity-high     { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3); }
 .bg-severity-medium   { background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.3); }
-.bg-severity-low      { background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.3); }
-.bg-severity-info      { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); }
+.bg-severity-low      { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); }
+.bg-severity-info     { background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); }
 
-/* OWASP category colors */
-.owasp-llm01 { color: #ef4444; }
-.owasp-llm02 { color: #f97316; }
-.owasp-llm03 { color: #eab308; }
-.owasp-llm04 { color: #22c55e; }
-.owasp-llm05 { color: #3b82f6; }
-.owasp-llm06 { color: #8b5cf6; }
-.owasp-llm07 { color: #a855f7; }
-.owasp-llm08 { color: #ec4899; }
-.owasp-llm09 { color: #6b7280; }
-.owasp-llm10 { color: #f1f5f9; }
+/* ── OWASP category colors (distinct, non-adjacent hues) ──────────────────── */
+.owasp-llm01 { color: #EF4444; }
+.owasp-llm02 { color: #F59E0B; }
+.owasp-llm03 { color: #EAB308; }
+.owasp-llm04 { color: #22C55E; }
+.owasp-llm05 { color: #38BDF8; }
+.owasp-llm06 { color: #8B5CF6; }
+.owasp-llm07 { color: #A855F7; }
+.owasp-llm08 { color: #EC4899; }
+.owasp-llm09 { color: #94A3B8; }
+.owasp-llm10 { color: #F1F5F9; }
+
+/* ── Responsive tables: desktop table → mobile stacked cards ────────────────
+   Usage: add class "responsive-table" to a <table>; on <sm screens each row
+   collapses into a card via data-label attributes. */
+@media (max-width: 767px) {
+  .responsive-table thead { display: none; }
+  .responsive-table tr {
+    display: block;
+    border: 1px solid rgba(245, 158, 11, 0.1);
+    border-radius: 12px;
+    background: rgba(17, 19, 25, 0.85);
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0;
+  }
+  .responsive-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    text-align: right;
+  }
+  .responsive-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748B;
+    text-align: left;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Motion preferences ───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

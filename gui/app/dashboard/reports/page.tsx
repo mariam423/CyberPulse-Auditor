@@ -133,10 +133,10 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Reports</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-white">Reports</h1>
         <p className="text-slate-400 text-sm mt-1">
           Unified reports — identical to the CLI (HTML, Markdown, JSON, SARIF 2.1.0)
         </p>
@@ -154,7 +154,7 @@ export default function ReportsPage() {
           <select
             value={selectedRun ?? ''}
             onChange={(e) => setSelectedRun(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-midnight-700 border border-midnight-600 text-white focus:border-emerald-500/50 focus:outline-none font-mono text-sm"
+            className="w-full px-4 py-2.5 rounded-lg bg-obsidian-700 border border-obsidian-600 text-white focus:border-amber-500/50 focus:outline-none font-mono text-sm"
           >
             <option value="">— Choose a run —</option>
             {runs.map((r) => (
@@ -176,8 +176,8 @@ export default function ReportsPage() {
                 className={clsx(
                   'px-4 py-2 rounded-lg text-sm font-medium border transition-all',
                   selectedFormat === fmt
-                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
-                    : 'bg-midnight-700 border-midnight-600 text-slate-400 hover:border-midnight-500'
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+                    : 'bg-obsidian-700 border-obsidian-600 text-slate-400 hover:border-obsidian-500'
                 )}
               >
                 {fmt === 'sarif' ? 'SARIF 2.1.0' : fmt.toUpperCase()}
@@ -193,8 +193,8 @@ export default function ReportsPage() {
             className={clsx(
               'flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm transition-all',
               !selectedRun || generating
-                ? 'bg-midnight-700 text-slate-500 cursor-not-allowed'
-                : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                ? 'bg-obsidian-700 text-slate-500 cursor-not-allowed'
+                : 'bg-amber-500 hover:bg-amber-600 text-obsidian-900'
             )}
           >
             <Download className="w-4 h-4" />
@@ -207,8 +207,8 @@ export default function ReportsPage() {
             className={clsx(
               'flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm border transition-all',
               !selectedRun
-                ? 'bg-midnight-700 text-slate-500 border-midnight-600 cursor-not-allowed pointer-events-none'
-                : 'bg-midnight-700 text-cyan-300 border-cyan-500/40 hover:border-cyan-400 hover:text-cyan-200'
+                ? 'bg-obsidian-700 text-slate-500 border-obsidian-600 cursor-not-allowed pointer-events-none'
+                : 'bg-obsidian-700 text-cyan-300 border-cyan-500/40 hover:border-cyan-400 hover:text-cyan-200'
             )}
           >
             <Shield className="w-4 h-4" />
@@ -220,7 +220,7 @@ export default function ReportsPage() {
       {/* Report output */}
       {reportContent && (
         <div className="card-glass rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-midnight-700">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-obsidian-700">
             <span className="text-sm text-slate-400 font-mono">
               {selectedFormat.toUpperCase()} Report
             </span>
@@ -255,7 +255,7 @@ export default function ReportsPage() {
               value={retestFinding ?? ''}
               onChange={(e) => { setRetestFinding(e.target.value); setRetestResult(null); }}
               disabled={!selectedRun || findings.length === 0}
-              className="w-full px-4 py-2.5 rounded-lg bg-midnight-700 border border-midnight-600 text-white focus:border-emerald-500/50 focus:outline-none font-mono text-sm disabled:opacity-50"
+              className="w-full px-4 py-2.5 rounded-lg bg-obsidian-700 border border-obsidian-600 text-white focus:border-amber-500/50 focus:outline-none font-mono text-sm disabled:opacity-50"
             >
               <option value="">— Choose a finding —</option>
               {findings.map((f) => (
@@ -271,7 +271,7 @@ export default function ReportsPage() {
             className={clsx(
               'flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm transition-all',
               !retestFinding || retesting
-                ? 'bg-midnight-700 text-slate-500 cursor-not-allowed'
+                ? 'bg-obsidian-700 text-slate-500 cursor-not-allowed'
                 : 'bg-cyan-600 hover:bg-cyan-500 text-white'
             )}
           >
