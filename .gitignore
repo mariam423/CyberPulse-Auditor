@@ -1,0 +1,9 @@
+node_modules/
+gui/node_modules/
+gui/.next/
+dist/
+data/*.db
+
+# agent credentials — environment only, never committed
+.env
+agents/sandbox/

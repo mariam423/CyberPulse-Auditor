@@ -1,0 +1,169 @@
+# CyberPulse Auditor — Pull-Request Security Gate
+# ────────────────────────────────────────────────
+# Runs the full CyberPulse audit pipeline on every PR targeting main:
+#   1. Zero-regression guardrail: build + lint + the complete core test suite.
+#   2. Custom-rule validation: every YAML rule file in the PR must parse.
+#   3. CLI smoke test: the audit engine runs end-to-end against the local
+#      mock target (no external API keys required).
+#
+# The security gate fails the PR when:
+#   - any core test fails (zero-regression directive)
+#   - any YAML rule file is invalid
+#   - the audit smoke run reports open CRITICAL findings
+#
+# No credentials are stored in the workflow: model API keys are provided
+# via repository secrets (OPENAI_API_KEY / ANTHROPIC_API_KEY) and are only
+# passed to the audit step when explicitly enabled.
+
+name: CyberPulse Security Audit
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      smoke_target:
+        description: 'Target URL for the audit smoke test (default: local mock)'
+        required: false
+        default: ''
+      max_iterations:
+        description: 'Max audit iterations for the smoke run (1-10)'
+        required: false
+        default: '1'
+
+# Least-privilege permissions for PR checks + artifact upload.
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+  security-events: write
+
+# Cancel superseded runs on the same PR (save CI minutes).
+concurrency:
+  group: cyberpulse-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-audit:
+    name: Zero-Regression + Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Guardrail 1: Zero-regression — the core suite must stay green ──────
+
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Core test suite (vitest)
+        run: npm test
+
+      # ── Guardrail 2: Custom rules must parse cleanly ────────────────────────
+
+      - name: Validate custom YAML rule files
+        run: |
+          set -euo pipefail
+          # Validate every rule file shipped in the repo (tests/fixtures + user rules)
+          find . -path ./node_modules -prune -o -path ./gui/node_modules -prune -o \
+            -type f \( -name "*.rules.yaml" -o -name "*.rules.yml" \) -print | while read -r f; do
+            echo "Validating: $f"
+            node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts rules validate --file "$f" --json
+          done
+          # Always validate the committed test fixtures so the rule engine itself is covered
+          for f in tests/fixtures/rules/*.yaml; do
+            [ -e "$f" ] || continue
+            if [[ "$f" == *"invalid-rules.yaml" ]]; then
+              echo "Skipping known-invalid fixture: $f"
+              continue
+            fi
+            echo "Validating fixture: $f"
+            node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts rules validate --file "$f" --json
+          done
+          echo "All rule files valid."
+
+      # ── Guardrail 3: CLI smoke audit against the built-in mock target ───────
+      # The mock provider in tests is deterministic and needs no API key.
+
+      - name: Audit smoke test (mock target, no keys required)
+        run: |
+          set -euo pipefail
+          TARGET_URL="${{ github.event.inputs.smoke_target }}"
+          MAX_ITER="${{ github.event.inputs.max_iterations || '1' }}"
+          [ -z "$TARGET_URL" ] && TARGET_URL="http://127.0.0.1:19999/mock-target"
+          echo "Running audit smoke against: $TARGET_URL (iterations=$MAX_ITER)"
+
+          # Start a tiny mock LLM target that always refuses (safe posture).
+          node -e "
+            const http = require('node:http');
+            const srv = http.createServer((req, res) => {
+              let body = '';
+              req.on('data', (c) => (body += c));
+              req.on('end', () => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  id: 'mock', model: 'mock',
+                  choices: [{ index: 0, message: { role: 'assistant', content: \"I'm sorry, but I can't help with that request.\" }, finish_reason: 'stop' }],
+                }));
+              });
+            });
+            srv.listen(19999, '127.0.0.1', () => console.log('mock target up'));
+            setTimeout(() => process.exit(0), 100000);
+          " &
+          MOCK_PID=$!
+          sleep 2
+
+          node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts audit \
+            --goal "CI smoke audit — verify the closed loop runs clean" \
+            --target-url "$TARGET_URL" \
+            --target-type http \
+            --model-provider openai \
+            --model gpt-4o \
+            --model-base-url "http://127.0.0.1:19999" \
+            --max-iterations "$MAX_ITER" \
+            --output json \
+            --output-file /tmp/cyberpulse-smoke-report.json \
+            --db-path data/ci-smoke.db
+
+          kill $MOCK_PID 2>/dev/null || true
+
+          # Gate: open critical findings block the merge.
+          if [ ! -f /tmp/cyberpulse-smoke-report.json ]; then
+            echo "::error::Smoke report missing — audit did not complete"
+            exit 1
+          fi
+          OPEN_CRITICAL=$(node -e "
+            const r = require('/tmp/cyberpulse-smoke-report.json');
+            const open = (r.findings ?? []).filter((f) => f.severity === 'critical' && !f.closed);
+            console.log(open.length);
+          ")
+          echo "Open critical findings: $OPEN_CRITICAL"
+          if [ "$OPEN_CRITICAL" -gt 0 ]; then
+            echo "::error::Audit gate failed — $OPEN_CRITICAL open CRITICAL finding(s). Fix before merge."
+            exit 1
+          fi
+
+      - name: Upload audit report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberpulse-audit-report
+          path: /tmp/cyberpulse-smoke-report.json
+          if-no-files-found: ignore
+          retention-days: 14

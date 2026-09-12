@@ -7,6 +7,7 @@ import type { AttackResult } from '../redteam/types.js';
 import type { OwaspId } from '../owasp/types.js';
 import { getPayloads } from '../redteam/payloads/index.js';
 import { generateMutations } from '../redteam/mutators.js';
+import type { AttackPayload } from '../redteam/types.js';
 
 /** Verdict heuristics for whether an attack "succeeded" */
 const INJECTION_INDICATORS = [
@@ -133,6 +134,13 @@ function interpolate(template: string, vars: Record<string, string>): string {
 
 function detectSuccess(owaspId: OwaspId, response: string): boolean {
   const lower = response.toLowerCase();
+  // Custom rule indicators (checked first — user-defined checks win).
+  const customIndicators = getCustomIndicatorsSync(owaspId);
+  for (const indicator of customIndicators) {
+    const haystack = indicator.caseSensitive ? response : lower;
+    const needle = indicator.caseSensitive ? indicator.pattern : indicator.pattern.toLowerCase();
+    if (haystack.includes(needle)) return true;
+  }
 
   switch (owaspId) {
     case 'LLM01': {
@@ -232,7 +240,9 @@ export class Attacker extends Agent<AttackInput, AttackOutput> {
 
     logger.info('attacker', `Starting attack on ${owaspId} against ${targetDescriptor}`);
 
-    const basePayloads = getPayloads(owaspId as OwaspId);
+    // Custom rules: merge user-defined payloads after the built-in set.
+    // When no custom rules are registered this degrades to the pure built-in list.
+    const basePayloads = await resolvePayloads(owaspId as OwaspId);
     if (basePayloads.length === 0) {
       logger.warn('attacker', `No payloads registered for ${owaspId}`);
       return { owaspId, goal, results: [] };
@@ -330,5 +340,71 @@ export class Attacker extends Agent<AttackInput, AttackOutput> {
 
   private async callTarget(turns: TargetTurn[]): Promise<string> {
     return this.target.call(turns);
+  }
+}
+
+// ── Custom rule integration (lazy, isolation-safe) ──────────────────────────
+
+/**
+ * Lazily resolve the active payload set for a category: built-in payloads
+ * plus any YAML-registered custom payloads (dedup by id). The rule engine
+ * is imported dynamically so processes that never load rules pay no cost.
+ */
+async function resolvePayloads(owaspId: OwaspId): Promise<AttackPayload[]> {
+  const builtin = getPayloads(owaspId);
+  try {
+    const { hasCustomRules, getCustomPayloads, mergePayloads } = await import('../rules/engine.js');
+    if (!hasCustomRules()) return builtin;
+    const custom = getCustomPayloads(owaspId) as unknown as AttackPayload[];
+    return mergePayloads(builtin, custom);
+  } catch {
+    // Rule engine unavailable → built-in behavior only (zero regression).
+    return builtin;
+  }
+}
+
+/** Sync indicator lookup for the detection path (cached after first resolve). */
+let indicatorCache: {
+  loaded: boolean;
+  byOwaspId: Map<OwaspId, Array<{ pattern: string; caseSensitive?: boolean }>>;
+} | null = null;
+
+function getCustomIndicatorsSync(owaspId: OwaspId): Array<{ pattern: string; caseSensitive?: boolean }> {
+  if (!indicatorCache) {
+    // First call in this process — probe the (possibly not-yet-imported) engine.
+    // Uses the same lazy trick: dynamic import resolution is settled at module
+    // init time by the first Attacker construction; here we probe synchronously
+    // via require-async handoff using a microtask-prefetched snapshot.
+    indicatorCache = { loaded: false, byOwaspId: new Map() };
+    void prefetchIndicators();
+  }
+  const cached = indicatorCache.byOwaspId.get(owaspId);
+  return cached ?? [];
+}
+
+/** Prefetch all custom indicators into the sync cache (fire-and-forget). */
+let prefetchStarted = false;
+async function prefetchIndicators(): Promise<void> {
+  if (prefetchStarted) return;
+  prefetchStarted = true;
+  try {
+    const { hasCustomRules, getCustomIndicators } = await import('../rules/engine.js');
+    if (!hasCustomRules()) return;
+    const allIds: OwaspId[] = ['LLM01', 'LLM02', 'LLM03', 'LLM04', 'LLM05', 'LLM06', 'LLM07', 'LLM08', 'LLM09', 'LLM10'];
+    const byOwaspId = new Map<OwaspId, Array<{ pattern: string; caseSensitive?: boolean }>>();
+    for (const id of allIds) {
+      const indicators = getCustomIndicators(id);
+      if (indicators.length > 0) {
+        byOwaspId.set(
+          id,
+          indicators.map((i) => (i.caseSensitive === undefined
+            ? { pattern: i.pattern }
+            : { pattern: i.pattern, caseSensitive: i.caseSensitive }))
+        );
+      }
+    }
+    indicatorCache = { loaded: true, byOwaspId };
+  } catch {
+    // Rule engine unavailable → no custom indicators (zero regression).
   }
 }

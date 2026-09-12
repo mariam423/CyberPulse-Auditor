@@ -26,23 +26,23 @@ export declare const DefenderInputSchema: z.ZodObject<{
         title: string;
         severity: "medium" | "info" | "critical" | "high" | "low";
         owaspId: "LLM01" | "LLM02" | "LLM03" | "LLM04" | "LLM05" | "LLM06" | "LLM07" | "LLM08" | "LLM09" | "LLM10";
+        evidence: string;
         repro: {
             expected: string;
             payload: string;
             target: string;
         };
-        evidence: string;
     }, {
         id: string;
         title: string;
         severity: "medium" | "info" | "critical" | "high" | "low";
         owaspId: "LLM01" | "LLM02" | "LLM03" | "LLM04" | "LLM05" | "LLM06" | "LLM07" | "LLM08" | "LLM09" | "LLM10";
+        evidence: string;
         repro: {
             expected: string;
             payload: string;
             target: string;
         };
-        evidence: string;
     }>, "many">;
     /** Optional system prompt to harden (for prompt-level patches) */
     systemPrompt: z.ZodOptional<z.ZodString>;
@@ -54,12 +54,12 @@ export declare const DefenderInputSchema: z.ZodObject<{
         title: string;
         severity: "medium" | "info" | "critical" | "high" | "low";
         owaspId: "LLM01" | "LLM02" | "LLM03" | "LLM04" | "LLM05" | "LLM06" | "LLM07" | "LLM08" | "LLM09" | "LLM10";
+        evidence: string;
         repro: {
             expected: string;
             payload: string;
             target: string;
         };
-        evidence: string;
     }[];
     systemPrompt?: string | undefined;
     sourceCode?: string | undefined;
@@ -69,12 +69,12 @@ export declare const DefenderInputSchema: z.ZodObject<{
         title: string;
         severity: "medium" | "info" | "critical" | "high" | "low";
         owaspId: "LLM01" | "LLM02" | "LLM03" | "LLM04" | "LLM05" | "LLM06" | "LLM07" | "LLM08" | "LLM09" | "LLM10";
+        evidence: string;
         repro: {
             expected: string;
             payload: string;
             target: string;
         };
-        evidence: string;
     }[];
     systemPrompt?: string | undefined;
     sourceCode?: string | undefined;

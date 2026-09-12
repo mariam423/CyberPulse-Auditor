@@ -5,6 +5,7 @@
  * Exposes a clean promise-based API consumable by both CLI (direct import)
  * and GUI (via API routes).
  */
+import { asRunId } from '../util/ids.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { createModelClient } from '../model/provider.js';
 import { createTargetAdapter } from '../targets/adapter.js';
@@ -36,7 +37,6 @@ export async function runAudit(config, modelDescriptor, outputFormat = 'json', d
     });
     // Import and use the existing Orchestrator
     const { OrchestratorConfigSchema } = await import('../orchestrator/orchestrator.js');
-    const { OrchestratorConfigSchema: OrigSchema } = await import('../orchestrator/orchestrator.js');
     const cfg = OrchestratorConfigSchema.parse({
         goal: config.goal,
         targetDescriptor: JSON.stringify(config.target),
@@ -75,7 +75,7 @@ export async function listRuns(dbPath) {
     try {
         const runs = store.listRuns();
         return runs.map((r) => {
-            const findings = store.getFindingsByRun(r.id);
+            const findings = store.getFindingsByRun(asRunId(r.id));
             return {
                 runId: r.id,
                 status: r.status,
@@ -100,10 +100,10 @@ export async function getRun(runId, dbPath) {
     const { SqliteStore } = await import('../store/sqlite.js');
     const store = new SqliteStore(dbPath);
     try {
-        const run = store.getRun(runId);
+        const run = store.getRun(asRunId(runId));
         if (!run)
             return null;
-        const findings = store.getFindingsByRun(runId);
+        const findings = store.getFindingsByRun(asRunId(runId));
         const config = JSON.parse(run.config_json);
         return {
             runId: run.id,

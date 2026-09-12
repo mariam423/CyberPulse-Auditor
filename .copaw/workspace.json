@@ -1,0 +1,153 @@
+{
+  "$schema": "https://copaw.dev/schemas/workspace.v1.json",
+  "version": "1.0.0",
+  "name": "cyberpulse-auditor",
+  "description": "Copaw workspace for CyberPulse Auditor — autonomous security auditing, patching, refactoring, and multi-agent delegation",
+
+  "primaryAgent": {
+    "name": "copaw",
+    "role": "primary-orchestrator",
+    "description": "Delegates security audit, patching, and verification tasks to specialized agents; routes prompts; gates all command execution through the security policy.",
+    "model": {
+      "provider": "${CYBERPULSE_PROVIDER:-anthropic}",
+      "model": "${CYBERPULSE_MODEL:-claude-sonnet-4-5}",
+      "apiKeyEnv": "UNIFIED_API_KEY",
+      "baseUrlEnv": "CYBERPULSE_BASE_URL",
+      "maxTokens": 8192,
+      "temperature": 0.2
+    }
+  },
+
+  "agents": [
+    {
+      "name": "openclaude",
+      "role": "security-analyst",
+      "description": "Deep vulnerability analysis, OWASP classification, and evidence triage over audit findings.",
+      "model": {
+        "provider": "${CYBERPULSE_PROVIDER:-anthropic}",
+        "model": "${CYBERPULSE_MODEL:-claude-sonnet-4-5}",
+        "apiKeyEnv": "UNIFIED_API_KEY",
+        "baseUrlEnv": "CYBERPULSE_BASE_URL",
+        "maxTokens": 4096,
+        "temperature": 0.1
+      },
+      "promptTemplate": "agents/templates/security-analyst.md",
+      "capabilities": ["analyze", "classify", "triage", "report"],
+      "sandbox": "readonly"
+    },
+    {
+      "name": "hermes",
+      "role": "patch-engineer",
+      "description": "Generates, reviews, and (when explicitly approved) applies code patches for confirmed vulnerabilities.",
+      "model": {
+        "provider": "${CYBERPULSE_PROVIDER:-anthropic}",
+        "model": "${CYBERPULSE_MODEL:-claude-sonnet-4-5}",
+        "apiKeyEnv": "UNIFIED_API_KEY",
+        "baseUrlEnv": "CYBERPULSE_BASE_URL",
+        "maxTokens": 8192,
+        "temperature": 0.0
+      },
+      "promptTemplate": "agents/templates/patch-engineer.md",
+      "capabilities": ["patch-generate", "patch-review", "patch-apply", "rollback"],
+      "sandbox": "workspace-write",
+      "requiresApproval": ["patch-apply", "rollback"]
+    },
+    {
+      "name": "pi",
+      "role": "refactor-engineer",
+      "description": "Autonomous code refactoring, modernization, and structural review — improves code quality without changing behavior.",
+      "model": {
+        "provider": "${CYBERPULSE_PROVIDER:-anthropic}",
+        "model": "${CYBERPULSE_MODEL:-claude-sonnet-4-5}",
+        "apiKeyEnv": "UNIFIED_API_KEY",
+        "baseUrlEnv": "CYBERPULSE_BASE_URL",
+        "maxTokens": 8192,
+        "temperature": 0.1
+      },
+      "promptTemplate": "agents/templates/refactor-engineer.md",
+      "capabilities": ["refactor", "code-review", "scaffold", "modernize"],
+      "sandbox": "workspace-write",
+      "requiresApproval": ["scaffold"]
+    }
+  ],
+
+  "taskDelegation": {
+    "strategy": "capability-match",
+    "rules": [
+      { "match": "audit|analyze|classify|owasp|triage", "agent": "openclaude" },
+      { "match": "patch|fix|harden|remediat|rollback", "agent": "hermes" },
+      { "match": "refactor|modernize|scaffold|code-review", "agent": "pi" },
+      { "match": "verify|test|regression|retest", "agent": "copaw" }
+    ],
+    "fallbackAgent": "copaw",
+    "maxConcurrentTasks": 2,
+    "taskTimeoutMs": 300000
+  },
+
+  "promptRouting": {
+    "defaultRoute": "copaw",
+    "routes": [
+      {
+        "name": "security-audit",
+        "match": "(?i)(audit|scan|pentest|vulnerab|owasp|llm0\\d)",
+        "agent": "openclaude",
+        "systemPromptRef": "agents/templates/security-analyst.md"
+      },
+      {
+        "name": "auto-patching",
+        "match": "(?i)(patch|remediat|harden|fix (the )?(code|finding)|apply patch)",
+        "agent": "hermes",
+        "systemPromptRef": "agents/templates/patch-engineer.md"
+      },
+      {
+        "name": "code-refactoring",
+        "match": "(?i)(refactor|modernize|clean up (the )?code|code review|scaffold)",
+        "agent": "pi",
+        "systemPromptRef": "agents/templates/refactor-engineer.md"
+      },
+      {
+        "name": "verification",
+        "match": "(?i)(verify|retest|regression|are tests green|check build)",
+        "agent": "copaw",
+        "systemPromptRef": "agents/templates/orchestrator.md"
+      }
+    ]
+  },
+
+  "commandExecution": {
+    "policy": "allowlist",
+    "allow": [
+      "npm run build",
+      "npm run lint",
+      "npm test",
+      "npx tsc --noEmit",
+      "npx vitest run",
+      "node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts --help",
+      "node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts audit --dry-run-patches --patch-root agents/sandbox",
+      "node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts report --run * --format *",
+      "node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts retest --run * --finding *",
+      "cd gui && npm run build"
+    ],
+    "deny": [
+      "rm -rf /",
+      "git push * --force",
+      "curl * | sh",
+      "sudo *",
+      "npm publish *",
+      "cat ~/.env*",
+      "printenv *",
+      "env"
+    ],
+    "maxCommandTimeoutMs": 300000,
+    "requireApproval": ["git commit *", "git push *", "npm install *"]
+  },
+
+  "credentialHandling": {
+    "source": "environment-only",
+    "apiKeyEnvVars": ["UNIFIED_API_KEY", "CYBERPULSE_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"],
+    "resolutionOrder": ["UNIFIED_API_KEY", "CYBERPULSE_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"],
+    "neverLog": true,
+    "neverPersist": true,
+    "redactInOutput": true
+  }
+}

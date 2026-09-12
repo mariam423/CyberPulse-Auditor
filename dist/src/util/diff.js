@@ -140,13 +140,11 @@ export function applyDiff(original, diff) {
             oldIdx++;
         }
         // Apply hunk body
-        let newIdx = hunk.newStart - 1;
         for (const line of hunk.body) {
             if (line.startsWith(' ') || line.startsWith('\\')) {
                 // context line
                 result.push(lines[oldIdx] ?? '');
                 oldIdx++;
-                newIdx++;
             }
             else if (line.startsWith('-')) {
                 // deleted line
@@ -155,7 +153,6 @@ export function applyDiff(original, diff) {
             else if (line.startsWith('+')) {
                 // added line
                 result.push(line.substring(1));
-                newIdx++;
             }
         }
     }

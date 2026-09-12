@@ -21,6 +21,31 @@ export function buildBlockingSchema(attackPayload, _legitimateExample) {
         /attacker\./i,
         /169\.254\.169\.254/i,
         /\{\{.*\}\}/i, // template injection
+        // SSRF
+        /169\.254\./i,
+        /10\.0\.0\.\d+/i,
+        /127\.0\.0\.1/i,
+        /localhost:\d+/i,
+        /192\.168\.\d+/i,
+        /172\.16\.\d+/i,
+        /metadata/i,
+        /iam\/security-credentials/i,
+        /redirect\?url=/i,
+        /%31%32%37/i,
+        // Insecure deserialization
+        /pickle/i,
+        /__reduce__/i,
+        /!!python\/object/i,
+        /yaml\.load/i,
+        /objectinputstream/i,
+        /readobject/i,
+        /commons-collections/i,
+        /node-serialize/i,
+        /_\$\$nd_func\$\$/i,
+        /__proto__/i,
+        /invokertransformer/i,
+        /deserializ/i,
+        /unmarshal/i,
     ];
     for (const word of words) {
         for (const pattern of dangerousPatterns) {
@@ -90,7 +115,6 @@ function computeDiffHunks(oldLines, newLines) {
     }
     // Group into hunks
     const hunks = [];
-    let hunkStart = 0;
     let editI = 0;
     while (editI < edits.length) {
         // Find next change
@@ -99,7 +123,6 @@ function computeDiffHunks(oldLines, newLines) {
         if (editI >= edits.length)
             break;
         const changeStart = Math.max(0, editI - CONTEXT);
-        const changeEnd = editI;
         let editEnd = editI;
         while (editEnd < edits.length && edits[editEnd]?.type !== 'keep')
             editEnd++;
@@ -119,7 +142,6 @@ function computeDiffHunks(oldLines, newLines) {
         }
         const keepEdits = edits.slice(changeStart, contextEnd).filter((e) => e?.type === 'keep');
         const firstKeep = keepEdits[0];
-        const lastKeep = keepEdits[keepEdits.length - 1];
         const oldStart = firstKeep?.oldIdx ?? 1;
         const oldCount = body.filter((l) => !l.startsWith('+')).length;
         const newStart = firstKeep?.newIdx ?? 1;
@@ -168,7 +190,6 @@ export function createCodePatch(opts) {
  */
 export function validateBlockingSchema(schemaSource, attackPayload) {
     try {
-        // eslint-disable-next-line no-new-func
         const schemaFn = new Function('z', `return ${schemaSource}`);
         const schema = schemaFn(z);
         schema.parse(attackPayload);

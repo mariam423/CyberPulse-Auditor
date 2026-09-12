@@ -62,7 +62,10 @@ export async function launchGui(options = {}) {
     const env = {
         ...process.env,
         PORT: String(port),
-        CYBERPULSE_DB_PATH: process.env.CYBERPULSE_DB_PATH ?? 'data/cyberpulse.db',
+        // Absolute path so the GUI (cwd = gui/) shares the root database.
+        CYBERPULSE_DB_PATH: process.env.CYBERPULSE_DB_PATH
+            ? resolve(process.cwd(), process.env.CYBERPULSE_DB_PATH)
+            : resolve(process.cwd(), 'data/cyberpulse.db'),
     };
     // Start next dev (no --open flag — we open the browser manually)
     const child = spawn(nextBin, ['dev', '--port', String(port)], {

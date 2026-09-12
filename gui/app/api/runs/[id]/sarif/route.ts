@@ -1,17 +1,21 @@
 /**
  * GET /api/runs/[id]/sarif — Download a run's findings as a SARIF 2.1.0 report.
  *
- * Reads the shared CyberPulse database, rebuilds the RunReport shape, and
- * reuses the core SARIF formatter for 100% parity with CLI output.
+ * Consumes the unified report service (same as CLI `report --format sarif`),
+ * so the SARIF payload is byte-identical between GUI and CLI.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { resolve } from 'node:path';
 import { getRun } from '@/lib/db';
-import { formatSarif } from '@report/sarif';
-import type { RunReport } from '@report/types';
-import type { RunId } from '@shared/util/ids';
+import { buildRunReport, renderReport, reportFilename, FORMAT_META } from '@report/service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** The shared DB lives at <project root>/data/cyberpulse.db — the Next server runs with cwd = gui/. */
+function rootDbPath(): string | undefined {
+  return process.env.CYBERPULSE_DB_PATH || resolve(process.cwd(), '../data/cyberpulse.db');
+}
 
 export async function GET(
   _req: NextRequest,
@@ -23,36 +27,19 @@ export async function GET(
       return NextResponse.json({ error: 'Run not found' }, { status: 404 });
     }
 
-    // Rebuild the RunReport shape the SARIF formatter expects
-    const report: RunReport = {
-      runId: run.runId as RunId,
-      status: run.status as RunReport['status'],
-      startedAt: run.startedAt,
-      finishedAt: run.finishedAt,
-      target: run.target,
-      goal: run.goal,
-      iterations: run.iterations,
-      findings: run.findings.map((f) => ({
-        id: f.id,
-        owaspId: f.owaspId,
-        severity: f.severity as 'critical' | 'high' | 'medium' | 'low' | 'info',
-        title: f.title,
-        evidence: f.evidence,
-        repro: f.repro as { payload: string; target: string; expected: string },
-        closed: f.closed,
-      })),
-      patches: [],
-      retests: [],
-    };
+    // Unified service: findings + patches + retests (identical to CLI)
+    const report = buildRunReport(params.id, rootDbPath());
+    if (!report) {
+      return NextResponse.json({ error: 'Run not found' }, { status: 404 });
+    }
 
-    const sarif = JSON.stringify(formatSarif(report), null, 2);
-    const filename = `cyberpulse-${run.runId}.sarif`;
+    const sarif = renderReport(report, 'sarif');
 
     return new NextResponse(sarif, {
       status: 200,
       headers: {
-        'Content-Type': 'application/sarif+json; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Type': FORMAT_META.sarif.contentType,
+        'Content-Disposition': `attachment; filename="${reportFilename(params.id, 'sarif')}"`,
       },
     });
   } catch (err) {

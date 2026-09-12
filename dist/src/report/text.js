@@ -1,13 +1,3 @@
-const SEVERITY_COLOR = {
-    critical: 'red',
-    high: 'rgb(255,165,0)',
-    medium: 'yellow',
-    low: 'green',
-    info: 'blue',
-};
-function sevColor(severity) {
-    return SEVERITY_COLOR[severity] ?? 'gray';
-}
 /**
  * Format a CyberPulse run report as a terminal-friendly text report.
  * Uses ANSI color codes for readability in the terminal.

@@ -66,7 +66,7 @@ export declare const ValidatorOutputSchema: z.ZodObject<{
         response: string;
         passed: boolean;
     }[];
-    verdict: "closed" | "open" | "inconclusive";
+    verdict: "open" | "closed" | "inconclusive";
 }, {
     evidence: string;
     findingId: string;
@@ -76,7 +76,7 @@ export declare const ValidatorOutputSchema: z.ZodObject<{
         response: string;
         passed: boolean;
     }[];
-    verdict: "closed" | "open" | "inconclusive";
+    verdict: "open" | "closed" | "inconclusive";
 }>;
 export type ValidatorOutput = z.infer<typeof ValidatorOutputSchema>;
 /**

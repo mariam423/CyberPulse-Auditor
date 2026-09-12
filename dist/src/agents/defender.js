@@ -81,7 +81,7 @@ export class Defender extends Agent {
             patches.push(typedPromptPatch);
             addressedFindings.push(finding.id);
             // For critical/high code-related vulnerabilities, also produce a CodePatch
-            const codeRelatedIds = ['LLM01', 'LLM02', 'LLM06'];
+            const codeRelatedIds = ['LLM01', 'LLM02', 'LLM05', 'LLM06'];
             const shouldProduceCodePatch = (finding.severity === 'critical' || finding.severity === 'high') &&
                 codeRelatedIds.includes(owaspId);
             if (shouldProduceCodePatch) {

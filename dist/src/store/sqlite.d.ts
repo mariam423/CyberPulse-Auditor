@@ -1,7 +1,5 @@
-import { z } from 'zod';
 import type { RunId, FindingId, PatchId, RetestId } from '../util/ids.js';
-declare const RunStatusSchema: z.ZodEnum<["running", "partial", "complete", "error"]>;
-type RunStatus = z.infer<typeof RunStatusSchema>;
+type RunStatus = 'running' | 'partial' | 'complete' | 'error';
 interface RunRow {
     id: string;
     target: string;
@@ -29,6 +27,24 @@ interface PatchRow {
     after_or_diff: string;
     zod_schema: string;
     rationale: string;
+}
+/** Read-model rows for unified reporting (subset of persisted tables). */
+export interface RetestReadRow {
+    id: string;
+    run_id: string;
+    finding_id: string;
+    closed: number;
+    attempts_json: string;
+    evidence: string;
+    ts: string;
+}
+export interface AttemptReadRow {
+    id: string;
+    run_id: string;
+    agent: string;
+    payload: string;
+    response: string;
+    ts: string;
 }
 export declare class SqliteStore {
     private readonly db;
@@ -61,6 +77,9 @@ export declare class SqliteStore {
         rationale: string;
     }): void;
     getPatchesByFinding(findingId: FindingId): PatchRow[];
+    getPatchesByRun(runId: RunId): PatchRow[];
+    getRetestsByRun(runId: RunId): RetestReadRow[];
+    getAttemptsByRun(runId: RunId): AttemptReadRow[];
     addRetest(row: {
         id: RetestId;
         runId: RunId;

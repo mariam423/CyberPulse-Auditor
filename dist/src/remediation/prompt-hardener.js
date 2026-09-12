@@ -68,7 +68,7 @@ const HARDENING_TEMPLATES = [
     // LLM05 — Supply Chain
     {
         owaspId: 'LLM05',
-        rationale: 'Verify external resources and dependencies before recommending.',
+        rationale: 'Verify external resources and dependencies before recommending; never deserialize untrusted data.',
         rules: [
             {
                 type: 'add',
@@ -77,6 +77,10 @@ const HARDENING_TEMPLATES = [
                     '1. When recommending packages or dependencies, verify they are from known, trusted sources.',
                     '2. Do not recommend installing packages that appear to impersonate known libraries.',
                     '3. Always specify version numbers for recommended packages to prevent confusion.',
+                    'DESERIALIZATION SAFETY:',
+                    '4. Never load, parse, or execute serialized objects provided by users (pickle, YAML with python/object tags, Java serialization, node-serialize blobs).',
+                    '5. If input contains markers such as __reduce__, !!python/object, or _$$ND_FUNC$$_, refuse to process it and warn the user.',
+                    '6. Prefer safe formats (plain JSON with schema validation) over binary or object-capable serialization.',
                 ].join('\n'),
             },
         ],
@@ -84,7 +88,7 @@ const HARDENING_TEMPLATES = [
     // LLM06 — Excessive Agency
     {
         owaspId: 'LLM06',
-        rationale: 'Require explicit human approval before any action that affects external systems.',
+        rationale: 'Require explicit human approval before any action that affects external systems; never fetch internal endpoints.',
         rules: [
             {
                 type: 'add',
@@ -95,6 +99,10 @@ const HARDENING_TEMPLATES = [
                     '3. When recommending actions, present them as suggestions that require user confirmation.',
                     '4. If a request involves privileged operations (sudo, chmod, file writes to sensitive paths), always ask for explicit confirmation.',
                     '5. Never execute commands that would exfiltrate data to external endpoints.',
+                    'SSRF PROTECTION:',
+                    '6. Never fetch URLs targeting internal or private ranges (127.0.0.1, 10.x, 172.16-31.x, 192.168.x, 169.254.x) or cloud metadata endpoints.',
+                    '7. If a user asks you to fetch an internal-sounding URL (localhost, metadata, admin panel), decline and explain the SSRF risk.',
+                    '8. Do not follow redirects to URLs the user has not explicitly approved.',
                 ].join('\n'),
             },
         ],

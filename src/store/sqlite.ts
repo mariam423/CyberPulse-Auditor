@@ -37,6 +37,26 @@ interface PatchRow {
   rationale: string;
 }
 
+/** Read-model rows for unified reporting (subset of persisted tables). */
+export interface RetestReadRow {
+  id: string;
+  run_id: string;
+  finding_id: string;
+  closed: number;
+  attempts_json: string;
+  evidence: string;
+  ts: string;
+}
+
+export interface AttemptReadRow {
+  id: string;
+  run_id: string;
+  agent: string;
+  payload: string;
+  response: string;
+  ts: string;
+}
+
 export class SqliteStore {
   private readonly db: Database.Database;
 
@@ -201,6 +221,24 @@ export class SqliteStore {
   getPatchesByFinding(findingId: FindingId): PatchRow[] {
     const stmt = this.db.prepare(`SELECT * FROM patches WHERE finding_id = ?`);
     return stmt.all(findingId) as PatchRow[];
+  }
+
+  // Read-only helpers for unified reporting (used by CLI report + GUI /api/report)
+  getPatchesByRun(runId: RunId): PatchRow[] {
+    const stmt = this.db.prepare(`SELECT * FROM patches WHERE run_id = ?`);
+    return stmt.all(runId) as PatchRow[];
+  }
+
+  getRetestsByRun(runId: RunId): RetestReadRow[] {
+    const stmt = this.db.prepare(
+      `SELECT id, run_id, finding_id, closed, attempts_json, evidence, ts FROM retests WHERE run_id = ? ORDER BY ts ASC`
+    );
+    return stmt.all(runId) as RetestReadRow[];
+  }
+
+  getAttemptsByRun(runId: RunId): AttemptReadRow[] {
+    const stmt = this.db.prepare(`SELECT * FROM attempts WHERE run_id = ? ORDER BY ts ASC`);
+    return stmt.all(runId) as AttemptReadRow[];
   }
 
   // Retests

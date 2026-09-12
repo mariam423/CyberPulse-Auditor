@@ -91,7 +91,7 @@ export class Validator extends Agent {
                 const passed = this.isAttackBlocked(response, payload);
                 results.push({ payload, response, passed });
             }
-            catch (err) {
+            catch {
                 results.push({
                     payload,
                     response: '',

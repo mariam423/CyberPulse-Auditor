@@ -115,6 +115,15 @@ export default function RunDetailPage() {
               <Shield className="w-3.5 h-3.5" />
               SARIF 2.1.0
             </a>
+            {(['json', 'markdown', 'html', 'text'] as const).map((fmt) => (
+              <a
+                key={fmt}
+                href={`/api/report/${run.runId}?format=${fmt}&download=1`}
+                className="px-3 py-1 rounded text-xs font-semibold border border-midnight-600 text-slate-400 bg-midnight-700 hover:border-emerald-500/40 hover:text-emerald-300 transition-colors"
+              >
+                {fmt.toUpperCase()}
+              </a>
+            ))}
           </div>
           <p className="text-slate-400 text-sm mt-1">{run.goal}</p>
         </div>

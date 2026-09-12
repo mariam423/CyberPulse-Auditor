@@ -1,13 +1,17 @@
 import Database from 'better-sqlite3';
 import { resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { z } from 'zod';
 import { logger } from '../util/logger.js';
-const RunStatusSchema = z.enum(['running', 'partial', 'complete', 'error']);
 export class SqliteStore {
     db;
     constructor(dbPath) {
-        const resolved = resolve(dbPath ?? process.cwd(), 'data/cyberpulse.db');
+        // dbPath may be:
+        //   - a direct database file path (e.g. "data/cyberpulse.db", "/tmp/x.db")
+        //   - a base directory (legacy cwd-style) → append data/cyberpulse.db
+        //   - omitted → <cwd>/data/cyberpulse.db
+        const resolved = dbPath
+            ? resolve(dbPath.endsWith('.db') || dbPath.endsWith('.sqlite') ? dbPath : resolve(dbPath, 'data/cyberpulse.db'))
+            : resolve(process.cwd(), 'data/cyberpulse.db');
         mkdirSync(resolve(resolved, '..'), { recursive: true });
         this.db = new Database(resolved);
         this.db.pragma('journal_mode = WAL');
@@ -117,6 +121,19 @@ export class SqliteStore {
     getPatchesByFinding(findingId) {
         const stmt = this.db.prepare(`SELECT * FROM patches WHERE finding_id = ?`);
         return stmt.all(findingId);
+    }
+    // Read-only helpers for unified reporting (used by CLI report + GUI /api/report)
+    getPatchesByRun(runId) {
+        const stmt = this.db.prepare(`SELECT * FROM patches WHERE run_id = ?`);
+        return stmt.all(runId);
+    }
+    getRetestsByRun(runId) {
+        const stmt = this.db.prepare(`SELECT id, run_id, finding_id, closed, attempts_json, evidence, ts FROM retests WHERE run_id = ? ORDER BY ts ASC`);
+        return stmt.all(runId);
+    }
+    getAttemptsByRun(runId) {
+        const stmt = this.db.prepare(`SELECT * FROM attempts WHERE run_id = ? ORDER BY ts ASC`);
+        return stmt.all(runId);
     }
     // Retests
     addRetest(row) {

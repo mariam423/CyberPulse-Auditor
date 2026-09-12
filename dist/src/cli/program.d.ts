@@ -40,8 +40,12 @@ export declare const AuditOptionsSchema: z.ZodObject<{
     output: z.ZodDefault<z.ZodEnum<["json", "markdown", "sarif", "text", "html"]>>;
     outputFile: z.ZodOptional<z.ZodString>;
     dbPath: z.ZodOptional<z.ZodString>;
+    patchRoot: z.ZodOptional<z.ZodString>;
+    dryRunPatches: z.ZodDefault<z.ZodBoolean>;
+    rulesFile: z.ZodOptional<z.ZodString>;
+    rulesDir: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    output: "text" | "json" | "markdown" | "sarif" | "html";
+    output: "json" | "text" | "markdown" | "sarif" | "html";
     model: {
         provider: "openai" | "anthropic" | "ollama";
         model: string;
@@ -58,8 +62,12 @@ export declare const AuditOptionsSchema: z.ZodObject<{
     maxIterations: number;
     allowOpenCritical: boolean;
     apply: boolean;
+    dryRunPatches: boolean;
     dbPath?: string | undefined;
     outputFile?: string | undefined;
+    patchRoot?: string | undefined;
+    rulesFile?: string | undefined;
+    rulesDir?: string | undefined;
 }, {
     model: {
         provider?: "openai" | "anthropic" | "ollama" | undefined;
@@ -74,12 +82,16 @@ export declare const AuditOptionsSchema: z.ZodObject<{
         headers?: Record<string, string> | undefined;
         pythonFn?: string | undefined;
     };
-    output?: "text" | "json" | "markdown" | "sarif" | "html" | undefined;
+    output?: "json" | "text" | "markdown" | "sarif" | "html" | undefined;
     maxIterations?: number | undefined;
     allowOpenCritical?: boolean | undefined;
     dbPath?: string | undefined;
     apply?: boolean | undefined;
     outputFile?: string | undefined;
+    patchRoot?: string | undefined;
+    dryRunPatches?: boolean | undefined;
+    rulesFile?: string | undefined;
+    rulesDir?: string | undefined;
 }>;
 export type AuditOptions = z.infer<typeof AuditOptionsSchema>;
 export declare function runAudit(opts: AuditOptions): Promise<void>;

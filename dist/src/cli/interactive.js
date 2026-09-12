@@ -159,29 +159,7 @@ export async function runInteractive() {
         console.log(chalk.dim('\n  Aborted. Run `cyberpulse audit --help` for CLI flags.\n'));
         return;
     }
-    // Run the audit
-    const opts = {
-        target: {
-            type: targetType,
-            url: targetUrl || undefined,
-            pythonFn: pythonFn || undefined,
-            headers: {},
-        },
-        model: {
-            provider: modelProvider,
-            model: modelName,
-            apiKey: apiKey || undefined,
-            baseUrl: undefined,
-        },
-        goal,
-        maxIterations,
-        apply,
-        allowOpenCritical: false,
-        output: 'text',
-        outputFile: undefined,
-        dbPath: process.env.CYBERPULSE_DB_PATH ?? 'data/cyberpulse.db',
-    };
-    // Build target config — avoid undefined fields (exactOptionalPropertyTypes)
+    // Run the audit (core orchestrator consumes the config below)
     const target = targetType === 'python-fn'
         ? { type: 'python-fn', pythonFn }
         : { type: targetType, url: targetUrl };

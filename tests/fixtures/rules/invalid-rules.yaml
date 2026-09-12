@@ -1,0 +1,7 @@
+version: 1
+name: invalid-rules
+rules:
+  - owaspId: LLM99
+    payloads:
+      - id: bad payload!
+        template: "x"

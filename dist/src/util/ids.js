@@ -14,6 +14,19 @@ export function newPatchId() {
 export function newRetestId() {
     return brand(`ret_${randomBytes(8).toString('hex')}`);
 }
+/** Re-brand an untrusted/raw string as a branded ID (CLI input, DB rows). */
+export function asRunId(id) {
+    return brand(id);
+}
+export function asFindingId(id) {
+    return brand(id);
+}
+export function asPatchId(id) {
+    return brand(id);
+}
+export function asRetestId(id) {
+    return brand(id);
+}
 export function isValidId(id) {
     return /^[a-z]+_[a-f0-9]{16,24}$/.test(id);
 }

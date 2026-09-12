@@ -11,14 +11,12 @@ import { loadCatalog } from '../owasp/catalog.js';
 import { SqliteStore } from '../store/sqlite.js';
 import { Orchestrator, OrchestratorConfigSchema } from '../orchestrator/orchestrator.js';
 import type { AuditOutputFormat } from '../orchestrator/orchestrator.js';
-import { formatMarkdown } from '../report/markdown.js';
-import { formatSarif } from '../report/sarif.js';
-import { formatHtml } from '../report/html.js';
-import { formatJson } from '../report/json.js';
-import { formatTextReport } from '../report/text.js';
 import { newRetestId, asRunId, asFindingId } from '../util/ids.js';
 import type { RunId, FindingId } from '../util/ids.js';
-import type { RunReport } from '../report/types.js';
+import { buildRunReport, renderReport } from '../report/service.js';
+import type { ReportFormat } from '../report/service.js';
+import { loadRulesFile, loadRulesDir, getRuleStats } from '../rules/engine.js';
+import { RuleValidationError } from '../rules/types.js';
 import { z } from 'zod';
 
 export const AuditOptionsSchema = z.object({
@@ -43,6 +41,8 @@ export const AuditOptionsSchema = z.object({
   dbPath: z.string().optional(),
   patchRoot: z.string().optional(),
   dryRunPatches: z.boolean().default(false),
+  rulesFile: z.string().optional(),
+  rulesDir: z.string().optional(),
 });
 
 export type AuditOptions = z.infer<typeof AuditOptionsSchema>;
@@ -86,6 +86,28 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
   const catalog = loadCatalog();
   const owaspIds = Array.from(catalog.keys());
   steps.doneWith('Initializing OWASP Catalog', `${catalog.size} entries`);
+
+  // ── Custom rules (YAML) — loaded before any attack runs ──────────
+  if (opts.rulesFile || opts.rulesDir) {
+    steps.start('Loading custom rules');
+    try {
+      if (opts.rulesFile) loadRulesFile(opts.rulesFile);
+      if (opts.rulesDir) loadRulesDir(opts.rulesDir);
+      const stats = getRuleStats();
+      steps.doneWith(
+        'Loading custom rules',
+        `${stats.rulesLoaded} rules · ${stats.payloadsAdded} payloads · ${stats.indicatorsAdded} indicators`
+      );
+    } catch (err) {
+      steps.fail('Loading custom rules');
+      if (err instanceof RuleValidationError) {
+        ui.error(`Custom rule validation failed: ${err.message}`);
+      } else {
+        ui.error(err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  }
 
   // Show OWASP categories being probed + run config, compactly
   ui.kv('Goal', chalk.white(opts.goal));
@@ -329,6 +351,8 @@ export function buildProgram(): Command {
     .option('--allow-open-critical', 'Allow reporting with open Critical findings')
     .option('--patch-root <dir>', 'Root directory for --apply code patches (default: cwd)', '.')
     .option('--dry-run-patches', 'Review + harden code patches without writing to disk')
+    .option('--rules-file <path>', 'Load custom security rules from a YAML file')
+    .option('--rules-dir <dir>', 'Load custom security rules from every YAML file in a directory')
     .option('--output <format>', 'Output format: json | text | markdown | sarif | html', 'text')
     .option('--output-file <path>', 'Write report to file instead of stdout')
     .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
@@ -359,6 +383,8 @@ export function buildProgram(): Command {
           dbPath: opts.dbPath,
           patchRoot: opts.patchRoot,
           dryRunPatches: opts.dryRunPatches ?? false,
+          rulesFile: opts.rulesFile,
+          rulesDir: opts.rulesDir,
         });
 
         await runAudit(options);
@@ -531,57 +557,30 @@ export function buildProgram(): Command {
           'Formatting report',
         ]);
 
-        const store = new SqliteStore(opts.dbPath);
-
         steps.start('Loading run');
-        const run = store.getRun(asRunId(opts.run));
-        if (!run) {
+        // Unified report service — identical output to the GUI /api/report route.
+        const reportRun = buildRunReport(opts.run, opts.dbPath);
+        if (!reportRun) {
           steps.fail('Loading run');
           ui.error(`Run ${opts.run as string} not found`);
-          store.close();
           process.exit(1);
         }
+        steps.doneWith('Loading run', `${reportRun.runId} · ${reportRun.findings.length} findings`);
 
-        const findings = store.getFindingsByRun(asRunId(opts.run));
-        steps.doneWith('Loading run', `${run.id} · ${findings.length} findings`);
-
-        ui.kv('Run ID', chalk.white(run.id));
-        ui.kv('Status', run.status === 'complete' ? chalk.green('complete') : hex('#f97316')(run.status));
-        ui.kv('Findings', chalk.white(`${findings.length}`));
+        ui.kv('Run ID', chalk.white(reportRun.runId));
+        ui.kv('Status', reportRun.status === 'complete' ? chalk.green('complete') : hex('#f97316')(reportRun.status));
+        ui.kv('Findings', chalk.white(`${reportRun.findings.length}`));
+        ui.kv('Patches', chalk.white(`${reportRun.patches.length}`));
         ui.kv('Format', chalk.white(opts.format.toUpperCase()));
         ui.blank();
 
-        const config = JSON.parse(run.config_json);
-        const reportRun: RunReport = {
-          runId: run.id as RunId,
-          status: run.status as RunReport['status'],
-          startedAt: run.started_at,
-          finishedAt: run.finished_at ?? new Date().toISOString(),
-          target: run.target,
-          goal: config.goal ?? '',
-          iterations: config.maxIterations ?? 1,
-          findings: findings.map((f) => ({
-            id: f.id,
-            owaspId: f.owasp_id,
-            severity: f.severity as RunReport['findings'][0]['severity'],
-            title: f.title,
-            evidence: f.evidence,
-            repro: JSON.parse(f.repro_json),
-            closed: f.closed === 1,
-          })),
-          patches: [],
-          retests: [],
-        };
-
         steps.start('Formatting report');
-        const output = selectFormat(reportRun, opts.format as AuditOutputFormat);
+        const output = renderReport(reportRun, opts.format as ReportFormat);
         steps.doneWith('Formatting report', opts.format.toUpperCase());
 
         writeOutput(output, opts.outputFile);
         ui.blank();
         ui.success(`Report ready`);
-
-        store.close();
       } catch (err) {
         ui.error('Report generation failed');
         if (err instanceof z.ZodError) {
@@ -593,21 +592,77 @@ export function buildProgram(): Command {
       }
     });
 
-  return program;
-}
+  // ── rules command ─────────────────────────────────────────────
+  const rules = program.command('rules');
+  rules
+    .description('Inspect and validate custom YAML security rules')
+    .command('validate')
+    .description('Validate rule file(s) without registering them — exits non-zero on any error')
+    .requiredOption('--file <path>', 'Single YAML rule file to validate')
+    .option('--json', 'Output machine-readable JSON result')
+    .action(async (opts) => {
+      try {
+        const { parseRulesYaml } = await import('../rules/engine.js');
+        const { readFileSync } = await import('node:fs');
+        const { resolve } = await import('node:path');
+        const abs = resolve(opts.file as string);
+        const parsed = parseRulesYaml(readFileSync(abs, 'utf-8'), abs);
+        const payloadCount = parsed.rules.reduce((s, r) => s + r.payloads.length, 0);
+        const indicatorCount = parsed.rules.reduce((s, r) => s + r.indicators.length, 0);
+        if (opts.json) {
+          console.log(JSON.stringify({ valid: true, file: abs, name: parsed.name, rules: parsed.rules.length, payloads: payloadCount, indicators: indicatorCount }, null, 2));
+        } else {
+          ui.section('Custom Rules Validation');
+          ui.kv('File', chalk.white(abs));
+          ui.kv('Name', chalk.white(parsed.name));
+          ui.kv('Rules', chalk.white(String(parsed.rules.length)));
+          ui.kv('Payloads', chalk.white(String(payloadCount)));
+          ui.kv('Indicators', chalk.white(String(indicatorCount)));
+          ui.blank();
+          ui.success('Rule file is valid');
+        }
+        process.exit(0);
+      } catch (err) {
+        if (err instanceof RuleValidationError) {
+          if (opts.json) {
+            console.log(JSON.stringify({ valid: false, file: opts.file, error: err.message }, null, 2));
+          } else {
+            ui.error(`Invalid rule file: ${err.message}`);
+          }
+        } else {
+          ui.error(err instanceof Error ? err.message : String(err));
+        }
+        process.exit(1);
+      }
+    });
 
-function selectFormat(report: RunReport, format: string): string {
-  switch (format) {
-    case 'markdown':
-      return formatMarkdown(report);
-    case 'sarif':
-      return JSON.stringify(formatSarif(report), null, 2);
-    case 'html':
-      return formatHtml(report);
-    case 'json':
-      return formatJson(report);
-    case 'text':
-    default:
-      return formatTextReport(report);
-  }
+  rules
+    .command('list')
+    .description('List rule files registered in the current process (after --rules-file/--rules-dir load)')
+    .option('--json', 'Output machine-readable JSON result')
+    .action(async (opts) => {
+      const stats = getRuleStats();
+      if (opts.json) {
+        console.log(JSON.stringify(stats, null, 2));
+      } else {
+        ui.section('Registered Custom Rules');
+        if (stats.rulesLoaded === 0) {
+          ui.kv('Status', chalk.gray('none loaded'));
+          ui.blank();
+          console.log(chalk.dim('  Load rules with: cyberpulse audit --rules-file <path> or --rules-dir <dir>'));
+        } else {
+          ui.kv('Files', chalk.white(String(stats.filesLoaded)));
+          ui.kv('Rules', chalk.white(String(stats.rulesLoaded)));
+          ui.kv('Payloads', chalk.white(String(stats.payloadsAdded)));
+          ui.kv('Indicators', chalk.white(String(stats.indicatorsAdded)));
+          ui.blank();
+          ui.sub('Source files');
+          for (const f of stats.files) console.log(`  ${chalk.green('✔')} ${chalk.white(f)}`);
+          ui.blank();
+        }
+      }
+      process.exit(0);
+    });
+
+  return program;
 }

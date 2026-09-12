@@ -19,9 +19,15 @@
     const { launchGui } = await import('../src/core/gui-launcher.js');
     const { runInteractive } = await import('../src/cli/interactive.js');
     const { buildProgram } = await import('../src/cli/program.js');
+    const { logger } = await import('../src/util/logger.js');
     // ── Argument parsing (minimal, before commander takes over) ────────────────────
     const rawArgs = process.argv.slice(2);
     const firstArg = rawArgs[0] ?? '';
+    // ── Global verbosity flags — flip the logger before anything runs ─────────────
+    if (rawArgs.includes('--debug'))
+        logger.enableDebug();
+    else if (rawArgs.includes('--verbose'))
+        logger.enableVerbose();
     // ── `cyberpulse gui` — Launch GUI dashboard ───────────────────────────────────
     if (firstArg === 'gui') {
         const portArg = rawArgs.find((a) => a.startsWith('--port='));

@@ -2,14 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Shield, Activity, FileText, LayoutDashboard, Radio } from 'lucide-react';
+import { Shield, Activity, FileText, LayoutDashboard, Radio, BookOpen, Gauge } from 'lucide-react';
 import clsx from 'clsx';
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/live', label: 'Live Telemetry', icon: Gauge },
   { href: '/dashboard/scan', label: 'New Scan', icon: Activity },
   { href: '/dashboard/runs', label: 'Run History', icon: Radio },
   { href: '/dashboard/reports', label: 'Reports', icon: FileText },
+  { href: '/dashboard/onboarding', label: 'Get Started', icon: BookOpen },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
