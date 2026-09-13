@@ -51,7 +51,10 @@ async function handleScan(req: NextRequest): Promise<NextResponse> {
     );
   } catch (err) {
     if (err instanceof BodyValidationError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid request', details: err.details ?? [] },
+        { status: 400 }
+      );
     }
     console.error('[api/scan] Enqueue error:', err);
     return NextResponse.json(

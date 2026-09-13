@@ -2,11 +2,19 @@
 export declare const DIVIDER: string;
 /** Indented gradient banner block (re-exported so callers can print raw). */
 export declare const BANNER: string;
-/** Print the flagship CYBERPULSE / AUDITOR block-art banner. */
+export declare function shouldPrintBanner(): boolean;
+/**
+ * Reset the dedupe latch after a console.clear() — the scrollback (and any
+ * banner in it) is gone, so the next printBanner() must render again.
+ * Used by the interactive wizard, which starts from a fresh screen.
+ */
+export declare function resetBannerForInteractive(): void;
+/** Print the flagship CYBERPULSE / AUDITOR block-art banner (guarded). */
 export declare function printBanner(): void;
 /**
  * Print the interactive mode-selection menu.
- * Shown when `cyberpulse` is run with no subcommand.
+ * Shown when `cyberpulse` is run with no subcommand. Interactive menu
+ * implies a human at a terminal — always renders.
  */
 export declare function printInteractiveMenu(): void;
 /** Status icons — inline width (callers own the indentation). */

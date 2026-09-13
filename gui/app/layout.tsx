@@ -1,15 +1,25 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'CyberPulse Auditor',
   description: 'Multi-Agent LLM Security Copilot — OWASP Top 10',
   icons: {
-    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🛡️</text></svg>',
+    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🛡️</svg>',
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const dynamic = 'force-dynamic';
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Reading the request headers makes the whole app dynamic — REQUIRED for
+  // the nonce-based CSP middleware: pages prerendered at build time cannot
+  // embed the per-request nonce, so React's inline bootstrap scripts would
+  // be blocked and every page would render dead (no hydration).
+  // The CSP header itself is set by middleware.ts.
+  await headers();
+
   return (
     <html lang="en" className="dark">
       <body className="min-h-screen bg-obsidian-900 text-slate-100 antialiased">

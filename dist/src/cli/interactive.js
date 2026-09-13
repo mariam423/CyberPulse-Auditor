@@ -6,7 +6,7 @@
  */
 import * as readline from 'node:readline';
 import chalk from 'chalk';
-import { printBanner, OWASP_COLOR } from '../util/banner.js';
+import { printBanner, resetBannerForInteractive, OWASP_COLOR } from '../util/banner.js';
 import { runAudit } from '../core/orchestrator.js';
 const rl = () => readline.createInterface({ input: process.stdin, output: process.stdout });
 /** Ask the user to pick one of a list of options. */
@@ -101,6 +101,9 @@ const TARGET_TYPES = ['http', 'openai-compatible', 'python-fn'];
  */
 export async function runInteractive() {
     console.clear();
+    // console.clear() wiped the startup banner — reset the dedupe latch so
+    // the wizard redraws it on its fresh canvas.
+    resetBannerForInteractive();
     printBanner();
     console.log(chalk.bold.white('\n  ┌─────────────────────────────────────────────────────────┐'));
     console.log(chalk.bold.white('  │          CyberPulse Interactive Scan Wizard              │'));

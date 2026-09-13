@@ -7,6 +7,13 @@
  * terminal commands, install-method toggle (quick script vs npm), and an
  * accessible copy-to-clipboard button.
  *
+ * STATE CONTRACT
+ *  - Uncontrolled: omit `activeOS` → the widget owns its own state
+ *    (defaults to `initialOS`, falls back to 'linux').
+ *  - Controlled:   pass `activeOS` (+ optional `onOSChange`) → the parent
+ *    drives the selection. This fixes tab desync when the host page has
+ *    its own OS switcher (e.g. /dashboard/onboarding).
+ *
  * Commands resolve from NEXT_PUBLIC_* env vars so the deployment can point
  * the snippets at its own install-script host / npm registry.
  */
@@ -33,41 +40,69 @@ const NPM_PACKAGE = process.env.NEXT_PUBLIC_NPM_PACKAGE ?? 'cyberpulse-auditor';
 
 export type InstallMethod = 'script' | 'npm';
 
+/**
+ * OS → install script map (dynamic script generation).
+ * Kept as data (not a switch) so new platforms are a one-line addition.
+ */
+export const INSTALL_COMMANDS: Record<Platform, string> = {
+  linux: `curl -sSL ${INSTALL_SCRIPT_BASE}/linux.sh | bash`,
+  macos: `curl -sSL ${INSTALL_SCRIPT_BASE}/mac.sh | bash`,
+  windows: `iex ((New-Object System.Net.WebClient).DownloadString('${INSTALL_SCRIPT_BASE}/windows.ps1'))`,
+};
+
 /** Primary one-liner for the selected OS + method. */
 export function installCommand(platform: Platform, method: InstallMethod): string {
   if (method === 'npm') {
     // npm works identically on every OS once Node 20+ is present.
     return `npm install -g ${NPM_PACKAGE}`;
   }
-  switch (platform) {
-    case 'windows':
-      // PowerShell: Invoke-WebRequest → Invoke-Expression
-      return `iwr -useb ${INSTALL_SCRIPT_BASE}/windows.ps1 | iex`;
-    case 'macos':
-      return `curl -sSL ${INSTALL_SCRIPT_BASE}/macos.sh | bash`;
-    case 'linux':
-    default:
-      return `curl -sSL ${INSTALL_SCRIPT_BASE}/linux.sh | bash`;
-  }
+  return INSTALL_COMMANDS[platform];
 }
 
-/** Follow-up verification command (post-install sanity check). */
-export function verifyCommand(_platform: Platform): string {
+/** Follow-up verification command — shell-appropriate per OS. */
+export function verifyCommand(platform: Platform): string {
+  // PowerShell (5.x) has no `&&` — use `;` there; bash/zsh use `&&`.
+  if (platform === 'windows') {
+    return 'cyberpulse --version; cyberpulse --help';
+  }
   return 'cyberpulse --version && cyberpulse --help';
 }
 
 interface InstallSnippetProps {
   /** Compact variant for embedding inside pages (default: standalone card). */
   compact?: boolean;
-  /** Override the default visible platform. */
-  initialPlatform?: Platform;
+  /** Uncontrolled: which OS is selected initially. Ignored when `activeOS` is set. */
+  initialOS?: Platform;
+  /** Controlled: the currently selected OS. Parent-owned — live-synced. */
+  activeOS?: Platform;
+  /** Controlled: called when the user switches OS tabs inside the widget. */
+  onOSChange?: (os: Platform) => void;
 }
 
-export default function InstallSnippet({ compact = false, initialPlatform = 'linux' }: InstallSnippetProps) {
-  const [platform, setPlatform] = useState<Platform>(initialPlatform);
+export default function InstallSnippet({
+  compact = false,
+  initialOS = 'linux',
+  activeOS,
+  onOSChange,
+}: InstallSnippetProps) {
+  // Uncontrolled fallback state — used ONLY when `activeOS` is not provided.
+  const [internalOS, setInternalOS] = useState<Platform>(initialOS);
   const [method, setMethod] = useState<InstallMethod>('script');
   const [copied, setCopied] = useState(false);
 
+  // Single source of truth: controlled prop wins when present.
+  const platform: Platform = activeOS ?? internalOS;
+
+  const selectOS = useCallback(
+    (next: Platform) => {
+      if (onOSChange) onOSChange(next);
+      else setInternalOS(next);
+    },
+    [onOSChange]
+  );
+
+  // The command displayed AND copied always derives from the current
+  // selection — one derivation, used by both the <pre> and the clipboard.
   const command = installCommand(platform, method);
   const verify = verifyCommand(platform);
   const meta = PLATFORM_META[platform];
@@ -78,8 +113,26 @@ export default function InstallSnippet({ compact = false, initialPlatform = 'lin
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      // Clipboard API unavailable (e.g. insecure context) — no-op; the
-      // command remains selectable text for manual copy.
+      // Clipboard API unavailable (insecure context, denied permission, or
+      // non-interactive embed). Fall back to a hidden textarea + execCommand
+      // which still works on plain HTTP origins.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = command;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        }
+      } catch {
+        // Last resort: the <pre> stays selectable text for manual copy.
+      }
     }
   }, [command]);
 
@@ -105,11 +158,12 @@ export default function InstallSnippet({ compact = false, initialPlatform = 'lin
           return (
             <button
               key={key}
+              type="button"
               role="tab"
               aria-selected={active}
-              aria-controls={`install-panel-${key}`}
+              aria-controls="install-panel"
               id={`install-tab-${key}`}
-              onClick={() => setPlatform(key)}
+              onClick={() => selectOS(key)}
               className={clsx(
                 'flex-1 min-w-0 flex items-center justify-center gap-2 px-2 sm:px-4 py-3 text-xs sm:text-sm font-semibold transition-all border-b-2',
                 active
@@ -131,6 +185,7 @@ export default function InstallSnippet({ compact = false, initialPlatform = 'lin
         aria-label="Choose install method"
       >
         <button
+          type="button"
           role="tab"
           aria-selected={method === 'script'}
           onClick={() => setMethod('script')}
@@ -145,6 +200,7 @@ export default function InstallSnippet({ compact = false, initialPlatform = 'lin
           Quick script
         </button>
         <button
+          type="button"
           role="tab"
           aria-selected={method === 'npm'}
           onClick={() => setMethod('npm')}
@@ -160,9 +216,9 @@ export default function InstallSnippet({ compact = false, initialPlatform = 'lin
         </button>
       </div>
 
-      {/* ── Command panel ───────────────────────────────────────────── */}
+      {/* ── Command panel — re-renders with the selected OS command ────── */}
       <div
-        id={`install-panel-${platform}`}
+        id="install-panel"
         role="tabpanel"
         aria-labelledby={`install-tab-${platform}`}
         className="p-3 sm:p-4 space-y-3"
@@ -179,6 +235,7 @@ export default function InstallSnippet({ compact = false, initialPlatform = 'lin
             {meta.shell}
           </span>
           <button
+            type="button"
             onClick={copy}
             aria-label={copied ? 'Command copied to clipboard' : `Copy ${meta.label} install command to clipboard`}
             className={clsx(
@@ -198,6 +255,7 @@ export default function InstallSnippet({ compact = false, initialPlatform = 'lin
             className="p-3 sm:p-4 text-[11px] sm:text-sm text-amber-300/90 font-mono overflow-x-auto leading-relaxed whitespace-pre"
             tabIndex={0}
             aria-label={`Install command for ${meta.label}`}
+            data-testid="install-command"
           >
             {command}
           </pre>

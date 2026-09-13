@@ -162,11 +162,37 @@ const FEATURES: Array<{ icon: typeof Shield; title: string; desc: string }> = [
 function CodeBlock({ commands, shell }: { commands: string[]; shell: string }) {
   const [copied, setCopied] = useState(false);
 
+  // Copy the runnable lines only: comments (# ...) and blank separators
+  // are stripped so the pasted result is immediately executable.
+  const runnable = commands.filter((c) => c.trim() !== '' && !c.trim().startsWith('#'));
+
   const copy = () => {
-    navigator.clipboard.writeText(commands.filter((c) => !c.startsWith('#') || c.includes('://')).join('\n')).then(() => {
+    if (runnable.length === 0) return;
+    const text = runnable.join('\n');
+    const markCopied = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    };
+    navigator.clipboard
+      .writeText(text)
+      .then(markCopied)
+      .catch(() => {
+        // Clipboard API unavailable — legacy execCommand fallback.
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (ok) markCopied();
+        } catch {
+          // text stays selectable
+        }
+      });
   };
 
   return (
@@ -247,9 +273,15 @@ export default function OnboardingPage() {
           </div>
         </div>
 
-        {/* Quick one-liner installer (OS tabs + copy) */}
+        {/* Quick one-liner installer — CONTROLLED: page platform state
+            drives the widget, and the widget reports internal tab clicks
+            back, so both switchers always stay in sync. */}
         <div className="max-w-2xl">
-          <InstallSnippet compact initialPlatform={platform} />
+          <InstallSnippet
+            compact
+            activeOS={platform}
+            onOSChange={setPlatform}
+          />
         </div>
 
         <p className="text-xs text-slate-500 -mt-1">

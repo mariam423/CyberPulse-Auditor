@@ -17,6 +17,10 @@ const nextConfig = {
     return config;
   },
   // ── SaaS security guardrails: hardened response headers ──────────────────
+  // NOTE: the Content-Security-Policy header lives in middleware.ts (nonce-
+  // based). Next.js App Router hydrates via inline <script> tags; a static
+  // `script-src 'self'` here blocks them and every button on every page
+  // dies (no React hydration). Do NOT re-add a static CSP here.
   async headers() {
     return [
       {
@@ -29,22 +33,6 @@ const nextConfig = {
           { key: 'X-XSS-Protection', value: '1; mode=block' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              // Next.js dev/build inline styles + the Google Fonts import in globals.css
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
-              "img-src 'self' data: blob:",
-              // API routes are same-origin; no third-party script origins
-              "script-src 'self'",
-              "connect-src 'self'",
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join('; '),
-          },
           // Strict Transport Security (behind TLS-terminating proxies in prod)
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
         ],

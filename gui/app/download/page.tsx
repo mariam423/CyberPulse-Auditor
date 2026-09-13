@@ -53,7 +53,24 @@ export default function DownloadPage() {
       setDockerCopied(true);
       setTimeout(() => setDockerCopied(false), 1600);
     } catch {
-      // clipboard unavailable — text stays selectable
+      // Fallback for insecure contexts (plain HTTP): legacy execCommand path.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = DOCKER_COMMAND;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) {
+          setDockerCopied(true);
+          setTimeout(() => setDockerCopied(false), 1600);
+        }
+      } catch {
+        // text stays selectable
+      }
     }
   }, []);
 

@@ -1,10 +1,11 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { logger } from '../util/logger.js';
 import { ui, StepTracker } from '../util/status.js';
-import { OWASP_COLOR, STATUS } from '../util/banner.js';
+import { OWASP_COLOR, STATUS, BANNER, printBanner, shouldPrintBanner } from '../util/banner.js';
+import { VERSION } from '../util/version.js';
 import { createModelClient } from '../model/provider.js';
 import { createTargetAdapter } from '../targets/adapter.js';
 import { loadCatalog } from '../owasp/catalog.js';
@@ -14,6 +15,7 @@ import { newRetestId, asRunId, asFindingId } from '../util/ids.js';
 import { buildRunReport, renderReport } from '../report/service.js';
 import { loadRulesFile, loadRulesDir, getRuleStats } from '../rules/engine.js';
 import { RuleValidationError } from '../rules/types.js';
+import { CommandError, EXIT, emitError } from './errors.js';
 import { z } from 'zod';
 export const AuditOptionsSchema = z.object({
     target: z.object({
@@ -53,6 +55,50 @@ function writeOutput(content, outputFile) {
 }
 function writeJson(content, outputFile) {
     writeOutput(content, outputFile);
+}
+// ── Input validation ──────────────────────────────────────────────────────────
+/** Validate a user-supplied filesystem path (must exist). Usage error, exit 2. */
+function requireExistingPath(kind, path) {
+    if (!path)
+        throw new CommandError(`${kind} is required`);
+    const abs = resolve(path);
+    if (!existsSync(abs)) {
+        throw new CommandError(`${kind} not found: ${path}`, `Check the path — resolved to ${abs}`);
+    }
+    return abs;
+}
+/** Validate a URL-ish target (http/https with a host). Usage error, exit 2. */
+function requireValidUrl(url) {
+    if (!url)
+        throw new CommandError('--target-url is required');
+    let parsed;
+    try {
+        parsed = new URL(url);
+    }
+    catch {
+        throw new CommandError(`Invalid --target-url: ${url}`, 'Expected format: http://host[:port][/path] or an OpenAI-compatible endpoint');
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new CommandError(`Unsupported protocol "${parsed.protocol}" in --target-url`, 'Only http:// and https:// targets are supported');
+    }
+    return url;
+}
+/** Validate a positive integer option (port, iterations, ...). */
+function requirePositiveInt(name, raw, fallback) {
+    if (raw === undefined)
+        return fallback;
+    const n = parseInt(raw, 10);
+    if (!Number.isInteger(n) || n <= 0) {
+        throw new CommandError(`Invalid ${name}: ${raw}`, 'Expected a positive integer');
+    }
+    return n;
+}
+/** Uniform styled error print for command actions. */
+function emitCliError(err, context) {
+    if (context && !(err instanceof CommandError) && !(err instanceof z.ZodError)) {
+        console.error(`\n  ${chalk.bold.red('✖')}  ${chalk.bold.white(context)}`);
+    }
+    emitError(err);
 }
 // ── Audit run ────────────────────────────────────────────────────────────────
 export async function runAudit(opts) {
@@ -240,8 +286,7 @@ async function guiCommand(opts) {
     const port = opts.port ?? 3000;
     const open = opts.open ?? true;
     const { launchGui } = await import('../core/gui-launcher.js');
-    const { printBanner } = await import('../util/banner.js');
-    printBanner();
+    // Banner already rendered by the preAction hook — no duplicate here.
     console.log(chalk.bold.cyan('  Launching GUI Dashboard...\n'));
     const server = await launchGui({ port, open, detached: true });
     console.log(`  ${chalk.green('✔')} GUI starting at ${chalk.cyan(server.url)}`);
@@ -264,7 +309,65 @@ export function buildProgram() {
     program
         .name('cyberpulse')
         .description('CyberPulse Auditor — Multi-Agent LLM Security Copilot')
-        .version('0.1.0');
+        .version(VERSION);
+    // ══ GLOBAL BANNER LIFECYCLE ═══════════════════════════════════════════════
+    // The banner must render on EVERY invocation surface:
+    //
+    //   A) preAction hook  → fires exactly once for any command action
+    //      (audit / retest / report / rules validate / rules list / gui).
+    //      Commander invokes root-level hooks for leaf actions too, so
+    //      `cyberpulse rules validate` prints once, not twice.
+    //
+    //   B) writeOut        → commander funnels --help / -h / -V / --version text
+    //      through writeOut BEFORE any hook runs (help exits during parsing),
+    //      so the banner is prepended here. The dedupe flag in banner.ts
+    //      guarantees A and B never double-render (e.g. `cyberpulse help audit`
+    //      triggers B, then the help command's action would re-enter).
+    //
+    // Stream safety lives in printBanner(): piped stdout (JSON/SARIF reports)
+    // bypasses the block art entirely — machine output stays parse-clean.
+    program.hook('preAction', (_thisCommand, actionCommand) => {
+        printBanner();
+        logger.debug('cli', `banner dispatched before action "${actionCommand.name()}"`);
+    });
+    const emitBannerForHelpOrVersion = (str) => {
+        if (shouldPrintBanner()) {
+            const out = process.stdout;
+            out.write(BANNER + '\n');
+            out.write('\n');
+        }
+        process.stdout.write(str);
+    };
+    // ── Styled UX errors — never a raw commander stack trace ──────────────────
+    program.showHelpAfterError(false);
+    program.showSuggestionAfterError(true);
+    program.exitOverride((err) => {
+        if (err.code === 'commander.version' ||
+            err.code === 'commander.versionDisplayed' ||
+            err.code === 'commander.help' ||
+            err.code === 'commander.helpDisplayed') {
+            process.exit(EXIT.ok);
+        }
+        if (err.code === 'commander.unknownCommand') {
+            console.error(`\n  ${chalk.bold.red('✖')}  ${chalk.bold.white(`Unknown command "${process.argv.slice(2)[0]}"`)}`);
+            console.error(`\n  ${chalk.gray('›')} ${chalk.gray('Run cyberpulse --help to see available commands')}\n`);
+            process.exit(EXIT.usageError);
+        }
+        // Missing required option / invalid value → styled single-line + help hint
+        const message = err.message.replace(/^error:\s*/i, '').trim();
+        console.error(`\n  ${chalk.bold.red('✖')}  ${chalk.bold.white(message)}`);
+        console.error(`\n  ${chalk.gray('›')} ${chalk.gray('Run cyberpulse <command> --help for option details')}\n`);
+        process.exit(EXIT.usageError);
+    });
+    program.configureOutput({
+        // B) --help / --version funnel: commander routes this text through
+        //    writeOut during parsing (hooks never fire), so the banner is
+        //    prepended here. Guarded + deduped against the preAction path.
+        writeOut: emitBannerForHelpOrVersion,
+        // Suppress commander's raw output — exitOverride above is the single
+        // styled printer for usage errors (prevents double-printed messages).
+        outputError: () => { },
+    });
     // ── gui command ─────────────────────────────────────────────
     const gui = program.command('gui');
     gui
@@ -276,13 +379,12 @@ export function buildProgram() {
         .action(async (opts) => {
         applyVerbosity(Boolean(opts.verbose), Boolean(opts.debug));
         try {
-            await guiCommand({ port: parseInt(opts.port, 10), open: opts.open });
+            const port = requirePositiveInt('--port', opts.port, 3000);
+            await guiCommand({ port, open: opts.open });
         }
         catch (err) {
-            ui.error('Failed to launch GUI');
-            if (err instanceof Error)
-                ui.error(err.message);
-            process.exit(1);
+            emitCliError(err, 'Failed to launch GUI');
+            process.exit(err instanceof CommandError ? EXIT.usageError : EXIT.runError);
         }
     });
     // ── audit command ─────────────────────────────────────────────
@@ -318,10 +420,18 @@ export function buildProgram() {
         .action(async (opts) => {
         applyVerbosity(Boolean(opts.verbose), Boolean(opts.debug));
         try {
+            // ── Fail fast on invalid input BEFORE any attack traffic ──────────
+            if (opts.rulesFile)
+                requireExistingPath('--rules-file', opts.rulesFile);
+            if (opts.rulesDir)
+                requireExistingPath('--rules-dir', opts.rulesDir);
+            const targetUrl = opts.targetType === 'python-fn'
+                ? opts.targetUrl // python-fn targets reference a module function, not a URL
+                : requireValidUrl(opts.targetUrl);
             const options = AuditOptionsSchema.parse({
                 target: {
                     type: opts.targetType,
-                    url: opts.targetUrl,
+                    url: targetUrl,
                     pythonFn: opts.targetPythonFn,
                     headers: opts.targetHeader,
                 },
@@ -332,7 +442,7 @@ export function buildProgram() {
                     baseUrl: opts.modelBaseUrl,
                 },
                 goal: opts.goal,
-                maxIterations: parseInt(opts.maxIterations, 10),
+                maxIterations: requirePositiveInt('--max-iterations', opts.maxIterations, 3),
                 apply: opts.apply,
                 allowOpenCritical: opts.allowOpenCritical,
                 output: opts.output,
@@ -346,14 +456,8 @@ export function buildProgram() {
             await runAudit(options);
         }
         catch (err) {
-            ui.error('Audit failed');
-            if (err instanceof z.ZodError) {
-                console.error(JSON.stringify(err.errors, null, 2));
-            }
-            else if (err instanceof Error) {
-                ui.error(err.message);
-            }
-            process.exit(1);
+            emitCliError(err, 'Audit failed');
+            process.exit(err instanceof CommandError || err instanceof z.ZodError ? EXIT.usageError : EXIT.runError);
         }
     });
     // ── retest command ────────────────────────────────────────────
@@ -467,14 +571,8 @@ export function buildProgram() {
             store.close();
         }
         catch (err) {
-            ui.error('Retest failed');
-            if (err instanceof z.ZodError) {
-                console.error(JSON.stringify(err.errors, null, 2));
-            }
-            else if (err instanceof Error) {
-                ui.error(err.message);
-            }
-            process.exit(1);
+            emitCliError(err, 'Retest failed');
+            process.exit(EXIT.runError);
         }
     });
     // ── report command ────────────────────────────────────────────
@@ -518,14 +616,8 @@ export function buildProgram() {
             ui.success(`Report ready`);
         }
         catch (err) {
-            ui.error('Report generation failed');
-            if (err instanceof z.ZodError) {
-                console.error(JSON.stringify(err.errors, null, 2));
-            }
-            else if (err instanceof Error) {
-                ui.error(err.message);
-            }
-            process.exit(1);
+            emitCliError(err, 'Report generation failed');
+            process.exit(EXIT.runError);
         }
     });
     // ── rules command ─────────────────────────────────────────────
@@ -540,8 +632,7 @@ export function buildProgram() {
         try {
             const { parseRulesYaml } = await import('../rules/engine.js');
             const { readFileSync } = await import('node:fs');
-            const { resolve } = await import('node:path');
-            const abs = resolve(opts.file);
+            const abs = requireExistingPath('--file', opts.file);
             const parsed = parseRulesYaml(readFileSync(abs, 'utf-8'), abs);
             const payloadCount = parsed.rules.reduce((s, r) => s + r.payloads.length, 0);
             const indicatorCount = parsed.rules.reduce((s, r) => s + r.indicators.length, 0);
@@ -558,7 +649,7 @@ export function buildProgram() {
                 ui.blank();
                 ui.success('Rule file is valid');
             }
-            process.exit(0);
+            process.exit(EXIT.ok);
         }
         catch (err) {
             if (err instanceof RuleValidationError) {
@@ -569,10 +660,13 @@ export function buildProgram() {
                     ui.error(`Invalid rule file: ${err.message}`);
                 }
             }
+            else if (err instanceof CommandError) {
+                emitCliError(err);
+            }
             else {
                 ui.error(err instanceof Error ? err.message : String(err));
             }
-            process.exit(1);
+            process.exit(EXIT.runError);
         }
     });
     rules

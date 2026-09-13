@@ -68,9 +68,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         id="sidebar-nav"
         className={clsx(
           'lg:fixed fixed z-40 inset-y-0 left-0 w-72 max-w-[85vw] bg-obsidian-850 border-r border-obsidian-700 flex flex-col transition-transform duration-300 ease-in-out',
-          // Desktop: always visible. Mobile: slide in/out.
+          // Desktop: always visible. Mobile: slide in/out — `invisible`
+          // keeps the closed drawer out of the accessibility tree and
+          // tab order while preserving the slide transition.
           'lg:translate-x-0 lg:block',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full invisible lg:visible'
         )}
         aria-label="Primary navigation"
       >

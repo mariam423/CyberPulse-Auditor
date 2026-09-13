@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { BANNER_VERSION } from './version.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const hex = (c) => chalk.hex(c);
 const rgb = (r, g, b) => chalk.rgb(r, g, b);
@@ -46,7 +47,7 @@ function gradient(lines, stops) {
 function indent(lines, pad) {
     return lines.map((l) => pad + l).join('\n');
 }
-const VERSION = 'v0.1.0';
+const VERSION = BANNER_VERSION;
 function statusStrip() {
     return (`${chalk.bold.gray(VERSION)}` +
         `  ${chalk.dim('·')}  ${chalk.green('✔')} ${chalk.gray('SQLite backend')}` +
@@ -74,17 +75,55 @@ function bannerChrome(interactive) {
         lines.push('');
     return lines;
 }
-/** Print the flagship CYBERPULSE / AUDITOR block-art banner. */
+/**
+ * Startup banner gate — guards against double-render and machine-readable
+ * stream pollution.
+ *
+ * Rules:
+ *   1. Idempotent: only the FIRST call in a process prints. The entry point,
+ *      the commander preAction hook, and help/version interception can all
+ *      race to print; the flag arbitrates.
+ *   2. Pipe/CI bypass: when stdout is NOT a TTY the process is being piped —
+ *      `cyberpulse audit --output json | jq` must stay parse-clean. Block-art
+ *      glyph rows would corrupt the stream even with ANSI stripped, so the
+ *      banner is suppressed outright. Override with FORCE_BANNER=1.
+ */
+let bannerPrinted = false;
+export function shouldPrintBanner() {
+    if (process.env['FORCE_BANNER'] === '1')
+        return true;
+    if (bannerPrinted)
+        return false;
+    if (!process.stdout.isTTY && !process.stderr.isTTY)
+        return false;
+    return true;
+}
+/**
+ * Reset the dedupe latch after a console.clear() — the scrollback (and any
+ * banner in it) is gone, so the next printBanner() must render again.
+ * Used by the interactive wizard, which starts from a fresh screen.
+ */
+export function resetBannerForInteractive() {
+    bannerPrinted = false;
+}
+/** Print the flagship CYBERPULSE / AUDITOR block-art banner (guarded). */
 export function printBanner() {
+    if (!shouldPrintBanner()) {
+        bannerPrinted = true;
+        return;
+    }
+    bannerPrinted = true;
     console.log(BANNER);
     for (const line of bannerChrome(false))
         console.log(line);
 }
 /**
  * Print the interactive mode-selection menu.
- * Shown when `cyberpulse` is run with no subcommand.
+ * Shown when `cyberpulse` is run with no subcommand. Interactive menu
+ * implies a human at a terminal — always renders.
  */
 export function printInteractiveMenu() {
+    bannerPrinted = true;
     console.log(BANNER);
     for (const line of bannerChrome(true))
         console.log(line);

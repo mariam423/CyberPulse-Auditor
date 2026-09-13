@@ -19,8 +19,11 @@
  */
 
 import { z } from 'zod';
-import { DatabaseSync } from 'node:sqlite';
+import Sqlite3Database from 'better-sqlite3';
 import { resolve as resolvePath } from 'node:path';
+
+/** better-sqlite3 surface this driver needs (Node 20-compatible). */
+type SqliteDb = InstanceType<typeof Sqlite3Database>;
 
 // ── Public contracts ─────────────────────────────────────────────────────────
 
@@ -64,7 +67,7 @@ export interface StoreDriver {
 
 export class SqliteDriver implements StoreDriver {
   readonly kind = 'sqlite' as const;
-  private db: DatabaseSync | null = null;
+  private db: SqliteDb | null = null;
   private readonly dbPath: string;
 
   constructor(dbPath?: string) {
@@ -74,10 +77,11 @@ export class SqliteDriver implements StoreDriver {
       resolvePath(process.cwd(), '..', 'data', 'cyberpulse.db');
   }
 
-  private conn(): DatabaseSync {
+  private conn(): SqliteDb {
     if (!this.db) {
-      // node:sqlite is built into Node 22+ — no native compile in Docker
-      this.db = new DatabaseSync(this.dbPath, { readOnly: true });
+      // better-sqlite3: Node 20-compatible (node:sqlite needs ≥22.5)
+      // and already a root dependency — no native compile in Docker.
+      this.db = new Sqlite3Database(this.dbPath, { readonly: true });
     }
     return this.db;
   }

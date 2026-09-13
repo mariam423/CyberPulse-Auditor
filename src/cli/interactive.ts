@@ -7,7 +7,7 @@
 
 import * as readline from 'node:readline';
 import chalk from 'chalk';
-import { printBanner, OWASP_COLOR } from '../util/banner.js';
+import { printBanner, resetBannerForInteractive, OWASP_COLOR } from '../util/banner.js';
 import { runAudit } from '../core/orchestrator.js';
 import type { AuditConfig, OwaspId } from '../core/types.js';
 
@@ -116,6 +116,9 @@ const TARGET_TYPES = ['http', 'openai-compatible', 'python-fn'] as const;
  */
 export async function runInteractive(): Promise<void> {
   console.clear();
+  // console.clear() wiped the startup banner — reset the dedupe latch so
+  // the wizard redraws it on its fresh canvas.
+  resetBannerForInteractive();
   printBanner();
 
   console.log(chalk.bold.white('\n  ┌─────────────────────────────────────────────────────────┐'));

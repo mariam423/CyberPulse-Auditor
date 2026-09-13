@@ -1,3 +1,22 @@
+/**
+ * CyberPulse CLI — Silent Execution UX
+ *
+ * Braille spinners, live step tickers, and concise status lines replace
+ * log spam. Nothing is printed unless it earns the pixels.
+ *
+ * STREAM CONTRACT: every human-facing UX line (sections, step stamps,
+ * spinners, kv rows) flows through uxWrite/uxOut. When stdout is piped —
+ * `cyberpulse audit --output json | jq` — the pipeline output must stay
+ * parse-clean, so ALL progress chrome reroutes to stderr automatically.
+ * Machine data (reports) keeps stdout; humans get their UX intact.
+ */
+/**
+ * UX stream router: stderr when stdout is a pipe, stdout when interactive.
+ * Forces (CYBERPULSE_UX_STDOUT=1) are honored for embedding contexts.
+ */
+export declare function uxOut(): NodeJS.WriteStream;
+/** Write one human UX line (with newline) through the stream router. */
+export declare function uxWrite(line: string): void;
 /** A single terminal spinner bound to one line of output. */
 export declare class Spinner {
     private frame;

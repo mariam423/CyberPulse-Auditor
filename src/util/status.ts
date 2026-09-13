@@ -10,7 +10,27 @@ const hex = (c: string) => (chalk as any).hex(c);
  *
  * Braille spinners, live step tickers, and concise status lines replace
  * log spam. Nothing is printed unless it earns the pixels.
+ *
+ * STREAM CONTRACT: every human-facing UX line (sections, step stamps,
+ * spinners, kv rows) flows through uxWrite/uxOut. When stdout is piped —
+ * `cyberpulse audit --output json | jq` — the pipeline output must stay
+ * parse-clean, so ALL progress chrome reroutes to stderr automatically.
+ * Machine data (reports) keeps stdout; humans get their UX intact.
  */
+
+/**
+ * UX stream router: stderr when stdout is a pipe, stdout when interactive.
+ * Forces (CYBERPULSE_UX_STDOUT=1) are honored for embedding contexts.
+ */
+export function uxOut(): NodeJS.WriteStream {
+  if (process.env['CYBERPULSE_UX_STDOUT'] === '1') return process.stdout;
+  return process.stdout.isTTY ? process.stdout : process.stderr;
+}
+
+/** Write one human UX line (with newline) through the stream router. */
+export function uxWrite(line: string): void {
+  uxOut().write(line + '\n');
+}
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
 
@@ -32,7 +52,7 @@ export class Spinner {
 
   constructor(message: string, opts?: { stream?: NodeJS.WriteStream; quiet?: boolean }) {
     this.message = message;
-    this.stream = opts?.stream ?? process.stdout;
+    this.stream = opts?.stream ?? uxOut();
     this.quiet = opts?.quiet ?? false;
     this.animated = this.stream.isTTY === true;
     if (!this.quiet) this.start();
@@ -178,7 +198,7 @@ export class StepTracker {
     if (!this.interactive) return;
     const stream = this.spinnerStream;
     if (stream) stream.write(`  ${ICONS[step.status]!}  ${COLORS[step.status]!(step.label)}${suffix}\n`);
-    else process.stdout.write(`  ${ICONS[step.status]!}  ${COLORS[step.status]!(step.label)}${suffix}\n`);
+    else uxWrite(`  ${ICONS[step.status]!}  ${COLORS[step.status]!(step.label)}${suffix}`);
   }
 
   start(label: string): void {
@@ -229,7 +249,7 @@ export class StepTracker {
   /** Full summary render (used at the end of a run). */
   render(): void {
     for (const step of this.steps) {
-      process.stdout.write(`  ${ICONS[step.status]!}  ${COLORS[step.status]!(step.label)}\n`);
+      uxWrite(`  ${ICONS[step.status]!}  ${COLORS[step.status]!(step.label)}`);
     }
   }
 }
@@ -239,53 +259,53 @@ export class StepTracker {
 export const ui = {
   info(msg: string, meta?: Record<string, unknown>): void {
     const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-    console.log(`  ${STATUS.info}  ${chalk.bold.cyan('INFO')}   ${msg}${metaStr}`);
+    uxWrite(`  ${STATUS.info}  ${chalk.bold.cyan('INFO')}   ${msg}${metaStr}`);
   },
 
   success(msg: string, meta?: Record<string, unknown>): void {
     const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-    console.log(`  ${STATUS.success}  ${chalk.bold.green('OK')}     ${msg}${metaStr}`);
+    uxWrite(`  ${STATUS.success}  ${chalk.bold.green('OK')}     ${msg}${metaStr}`);
   },
 
   warn(msg: string, meta?: Record<string, unknown>): void {
     const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-    console.log(`  ${STATUS.warn}  ${chalk.bold(hex('#f97316')('WARN'))}   ${msg}${metaStr}`);
+    uxWrite(`  ${STATUS.warn}  ${chalk.bold(hex('#f97316')('WARN'))}   ${msg}${metaStr}`);
   },
 
   error(msg: string, meta?: Record<string, unknown>): void {
     const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-    console.log(`  ${STATUS.error}  ${chalk.bold.red('ERROR')}  ${msg}${metaStr}`);
+    uxWrite(`  ${STATUS.error}  ${chalk.bold.red('ERROR')}  ${msg}${metaStr}`);
   },
 
   critical(msg: string, meta?: Record<string, unknown>): void {
     const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-    console.log(`  ${STATUS.critical}  ${chalk.bold.red('CRIT')}   ${msg}${metaStr}`);
+    uxWrite(`  ${STATUS.critical}  ${chalk.bold.red('CRIT')}   ${msg}${metaStr}`);
   },
 
   section(label: string): void {
-    console.log('');
-    console.log(DIVIDER);
-    console.log(`  ${chalk.bold.cyan('▸')} ${chalk.bold.white(label)}`);
-    console.log(DIVIDER);
-    console.log('');
+    uxWrite('');
+    uxWrite(DIVIDER);
+    uxWrite(`  ${chalk.bold.cyan('▸')} ${chalk.bold.white(label)}`);
+    uxWrite(DIVIDER);
+    uxWrite('');
   },
 
   sub(label: string): void {
-    console.log('');
-    console.log(`  ${chalk.bold.gray('▸')} ${chalk.bold.gray(label)}`);
+    uxWrite('');
+    uxWrite(`  ${chalk.bold.gray('▸')} ${chalk.bold.gray(label)}`);
   },
 
   divider(): void {
-    console.log(DIVIDER);
+    uxWrite(DIVIDER);
   },
 
   blank(): void {
-    console.log('');
+    uxWrite('');
   },
 
   kv(key: string, value: string): void {
     const k = chalk.bold.gray(key.padEnd(12));
-    console.log(`  ${k}  ${value}`);
+    uxWrite(`  ${k}  ${value}`);
   },
 
   findingRow(owaspId: string, severity: string, title: string, closed: boolean): void {
@@ -295,7 +315,7 @@ export const ui = {
     const id = owaspFn(owaspId);
     const statusIcon = closed ? STATUS.tick : STATUS.cross;
 
-    console.log(
+    uxWrite(
       `  ${statusIcon}  ${badge}  ${chalk.bold(id)}  ${title}  ` +
       `${chalk.gray('→')} ${closed ? chalk.green('CLOSED') : chalk.red('OPEN')}`
     );
@@ -306,7 +326,7 @@ export const ui = {
     const bar = '█'.repeat(count) + '░'.repeat(Math.max(0, total - count));
     const pct = total > 0 ? Math.round((count / total) * 100) : 0;
     const displayBar = bar || '░';
-    console.log(
+    uxWrite(
       `  ${sevFn(severity.toUpperCase().padEnd(9))}  ${sevFn(displayBar)}  ` +
       `${chalk.bold(sevFn(String(count)))}  (${pct}%)`
     );
@@ -314,7 +334,7 @@ export const ui = {
 
   owaspBanner(ids: string[]): void {
     const parts = ids.map((id) => (OWASP_COLOR[id] ?? chalk.white)(id));
-    console.log('  ' + parts.join(chalk.gray(' · ')));
+    uxWrite('  ' + parts.join(chalk.gray(' · ')));
   },
 
   runMeta(rows: Array<[string, string]>): void {
@@ -326,10 +346,10 @@ export const ui = {
   /** Spinner-bound transient pulse line. */
   pulse(msg: string): void {
     const glyph = chalk.cyan('⠋');
-    process.stdout.write(`\r  ${glyph}  ${chalk.cyan(msg)}`);
+    uxOut().write(`\r  ${glyph}  ${chalk.cyan(msg)}`);
   },
 
   clearPulse(): void {
-    process.stdout.write('\r' + ' '.repeat(80) + '\r');
+    uxOut().write('\r' + ' '.repeat(80) + '\r');
   },
 };

@@ -119,9 +119,13 @@ export function withRateLimit<Ctx = unknown>(
 const MAX_BODY_BYTES = 512 * 1024;
 
 export class BodyValidationError extends Error {
-  constructor(message: string) {
+  /** Structured zod issues (path + message) for API consumers. */
+  public readonly details?: Array<{ path: string; message: string }>;
+
+  constructor(message: string, details?: Array<{ path: string; message: string }>) {
     super(message);
     this.name = 'BodyValidationError';
+    this.details = details;
   }
 }
 
@@ -152,7 +156,11 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
       .slice(0, 5)
       .map((e) => `${e.path.join('.') || '(root)'}: ${e.message}`)
       .join('; ');
-    throw new BodyValidationError(`Validation failed: ${issues}`);
+    const details = parsed.error.errors.slice(0, 5).map((e) => ({
+      path: e.path.join('.') || '(root)',
+      message: e.message,
+    }));
+    throw new BodyValidationError(`Validation failed: ${issues}`, details);
   }
   return parsed.data as z.infer<S>;
 }

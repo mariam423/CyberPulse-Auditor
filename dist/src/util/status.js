@@ -8,7 +8,26 @@ const hex = (c) => chalk.hex(c);
  *
  * Braille spinners, live step tickers, and concise status lines replace
  * log spam. Nothing is printed unless it earns the pixels.
+ *
+ * STREAM CONTRACT: every human-facing UX line (sections, step stamps,
+ * spinners, kv rows) flows through uxWrite/uxOut. When stdout is piped —
+ * `cyberpulse audit --output json | jq` — the pipeline output must stay
+ * parse-clean, so ALL progress chrome reroutes to stderr automatically.
+ * Machine data (reports) keeps stdout; humans get their UX intact.
  */
+/**
+ * UX stream router: stderr when stdout is a pipe, stdout when interactive.
+ * Forces (CYBERPULSE_UX_STDOUT=1) are honored for embedding contexts.
+ */
+export function uxOut() {
+    if (process.env['CYBERPULSE_UX_STDOUT'] === '1')
+        return process.stdout;
+    return process.stdout.isTTY ? process.stdout : process.stderr;
+}
+/** Write one human UX line (with newline) through the stream router. */
+export function uxWrite(line) {
+    uxOut().write(line + '\n');
+}
 // ── Spinner ───────────────────────────────────────────────────────────────────
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const INTERVAL_MS = 80;
@@ -24,7 +43,7 @@ export class Spinner {
     animated;
     constructor(message, opts) {
         this.message = message;
-        this.stream = opts?.stream ?? process.stdout;
+        this.stream = opts?.stream ?? uxOut();
         this.quiet = opts?.quiet ?? false;
         this.animated = this.stream.isTTY === true;
         if (!this.quiet)
@@ -153,7 +172,7 @@ export class StepTracker {
         if (stream)
             stream.write(`  ${ICONS[step.status]}  ${COLORS[step.status](step.label)}${suffix}\n`);
         else
-            process.stdout.write(`  ${ICONS[step.status]}  ${COLORS[step.status](step.label)}${suffix}\n`);
+            uxWrite(`  ${ICONS[step.status]}  ${COLORS[step.status](step.label)}${suffix}`);
     }
     start(label) {
         const idx = this.steps.findIndex((s) => s.label === label);
@@ -197,7 +216,7 @@ export class StepTracker {
     /** Full summary render (used at the end of a run). */
     render() {
         for (const step of this.steps) {
-            process.stdout.write(`  ${ICONS[step.status]}  ${COLORS[step.status](step.label)}\n`);
+            uxWrite(`  ${ICONS[step.status]}  ${COLORS[step.status](step.label)}`);
         }
     }
 }
@@ -205,44 +224,44 @@ export class StepTracker {
 export const ui = {
     info(msg, meta) {
         const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-        console.log(`  ${STATUS.info}  ${chalk.bold.cyan('INFO')}   ${msg}${metaStr}`);
+        uxWrite(`  ${STATUS.info}  ${chalk.bold.cyan('INFO')}   ${msg}${metaStr}`);
     },
     success(msg, meta) {
         const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-        console.log(`  ${STATUS.success}  ${chalk.bold.green('OK')}     ${msg}${metaStr}`);
+        uxWrite(`  ${STATUS.success}  ${chalk.bold.green('OK')}     ${msg}${metaStr}`);
     },
     warn(msg, meta) {
         const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-        console.log(`  ${STATUS.warn}  ${chalk.bold(hex('#f97316')('WARN'))}   ${msg}${metaStr}`);
+        uxWrite(`  ${STATUS.warn}  ${chalk.bold(hex('#f97316')('WARN'))}   ${msg}${metaStr}`);
     },
     error(msg, meta) {
         const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-        console.log(`  ${STATUS.error}  ${chalk.bold.red('ERROR')}  ${msg}${metaStr}`);
+        uxWrite(`  ${STATUS.error}  ${chalk.bold.red('ERROR')}  ${msg}${metaStr}`);
     },
     critical(msg, meta) {
         const metaStr = meta ? chalk.gray(` ${JSON.stringify(meta)}`) : '';
-        console.log(`  ${STATUS.critical}  ${chalk.bold.red('CRIT')}   ${msg}${metaStr}`);
+        uxWrite(`  ${STATUS.critical}  ${chalk.bold.red('CRIT')}   ${msg}${metaStr}`);
     },
     section(label) {
-        console.log('');
-        console.log(DIVIDER);
-        console.log(`  ${chalk.bold.cyan('▸')} ${chalk.bold.white(label)}`);
-        console.log(DIVIDER);
-        console.log('');
+        uxWrite('');
+        uxWrite(DIVIDER);
+        uxWrite(`  ${chalk.bold.cyan('▸')} ${chalk.bold.white(label)}`);
+        uxWrite(DIVIDER);
+        uxWrite('');
     },
     sub(label) {
-        console.log('');
-        console.log(`  ${chalk.bold.gray('▸')} ${chalk.bold.gray(label)}`);
+        uxWrite('');
+        uxWrite(`  ${chalk.bold.gray('▸')} ${chalk.bold.gray(label)}`);
     },
     divider() {
-        console.log(DIVIDER);
+        uxWrite(DIVIDER);
     },
     blank() {
-        console.log('');
+        uxWrite('');
     },
     kv(key, value) {
         const k = chalk.bold.gray(key.padEnd(12));
-        console.log(`  ${k}  ${value}`);
+        uxWrite(`  ${k}  ${value}`);
     },
     findingRow(owaspId, severity, title, closed) {
         const sevFn = SEVERITY_COLOR[severity] ?? chalk.gray;
@@ -250,7 +269,7 @@ export const ui = {
         const badge = sevFn(`[${severity.toUpperCase()}]`);
         const id = owaspFn(owaspId);
         const statusIcon = closed ? STATUS.tick : STATUS.cross;
-        console.log(`  ${statusIcon}  ${badge}  ${chalk.bold(id)}  ${title}  ` +
+        uxWrite(`  ${statusIcon}  ${badge}  ${chalk.bold(id)}  ${title}  ` +
             `${chalk.gray('→')} ${closed ? chalk.green('CLOSED') : chalk.red('OPEN')}`);
     },
     severityBar(severity, count, total) {
@@ -258,12 +277,12 @@ export const ui = {
         const bar = '█'.repeat(count) + '░'.repeat(Math.max(0, total - count));
         const pct = total > 0 ? Math.round((count / total) * 100) : 0;
         const displayBar = bar || '░';
-        console.log(`  ${sevFn(severity.toUpperCase().padEnd(9))}  ${sevFn(displayBar)}  ` +
+        uxWrite(`  ${sevFn(severity.toUpperCase().padEnd(9))}  ${sevFn(displayBar)}  ` +
             `${chalk.bold(sevFn(String(count)))}  (${pct}%)`);
     },
     owaspBanner(ids) {
         const parts = ids.map((id) => (OWASP_COLOR[id] ?? chalk.white)(id));
-        console.log('  ' + parts.join(chalk.gray(' · ')));
+        uxWrite('  ' + parts.join(chalk.gray(' · ')));
     },
     runMeta(rows) {
         for (const [key, value] of rows) {
@@ -273,10 +292,10 @@ export const ui = {
     /** Spinner-bound transient pulse line. */
     pulse(msg) {
         const glyph = chalk.cyan('⠋');
-        process.stdout.write(`\r  ${glyph}  ${chalk.cyan(msg)}`);
+        uxOut().write(`\r  ${glyph}  ${chalk.cyan(msg)}`);
     },
     clearPulse() {
-        process.stdout.write('\r' + ' '.repeat(80) + '\r');
+        uxOut().write('\r' + ' '.repeat(80) + '\r');
     },
 };
 //# sourceMappingURL=status.js.map

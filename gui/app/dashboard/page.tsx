@@ -176,7 +176,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="responsive-table w-full min-w-[600px] lg:min-w-0">
+              <table className="responsive-table w-full lg:min-w-0">
                 <thead>
                   <tr className="border-b border-obsidian-700">
                     <th className="text-left px-4 sm:px-5 py-3 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Run</th>

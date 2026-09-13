@@ -41,7 +41,7 @@ test.describe('API surface — scan engine', () => {
     expect([400, 422, 500]).toContain(res.status());
   });
 
-  test('POST /api/scan runs a full closed-loop audit and persists it', async ({ request }) => {
+  test('POST /api/scan enqueues an async audit job and it completes', async ({ request }) => {
     const res = await request.post('/api/scan', {
       data: {
         goal: 'e2e ssrf + deser coverage probe',
@@ -54,28 +54,41 @@ test.describe('API surface — scan engine', () => {
       },
     });
 
-    expect(res.ok()).toBeTruthy();
+    // Async contract: 202 Accepted + jobId immediately (non-blocking).
+    expect(res.status()).toBe(202);
     const body = (await res.json()) as {
-      runId: string;
+      jobId: string;
       status: string;
-      findingsCount: number;
-      iterations: number;
     };
+    expect(body.jobId).toMatch(/^job_/);
+    expect(body.status).toBe('queued');
 
-    expect(body.runId).toMatch(/^run_/);
-    expect(['complete', 'partial']).toContain(body.status);
-    expect(body.iterations).toBe(1);
+    // Poll the job until terminal (bounded — CI must never hang).
+    let job: { status?: string; result?: { runId?: string; status?: string; iterations?: number } } = {};
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      const poll = await request.get(`/api/scan/${body.jobId}`);
+      expect(poll.ok()).toBeTruthy();
+      job = (await poll.json()) as typeof job;
+      if (job.status === 'complete' || job.status === 'error') break;
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+    expect(['complete', 'error']).toContain(job.status);
+    // The mock target is up in CI, so the audit engine should finish cleanly.
+    expect(job.status).toBe('complete');
+    expect(job.result?.runId).toMatch(/^run_/);
+    expect(['complete', 'partial']).toContain(job.result?.status);
 
-    // The new run must be immediately visible in the run history (shared DB parity)
+    // The persisted run must be visible in the run history (shared DB parity)
     const listed = await request.get('/api/runs');
     const history = (await listed.json()) as { runs: Array<{ runId: string }> };
-    expect(history.runs.some((r) => r.runId === body.runId)).toBe(true);
+    expect(history.runs.some((r) => r.runId === job.result?.runId)).toBe(true);
 
     // And its detail route must resolve
-    const detail = await request.get(`/api/runs/${body.runId}`);
+    const detail = await request.get(`/api/runs/${job.result?.runId}`);
     expect(detail.ok()).toBeTruthy();
     const detailBody = (await detail.json()) as { runId: string; findings: unknown[] };
-    expect(detailBody.runId).toBe(body.runId);
+    expect(detailBody.runId).toBe(job.result?.runId);
     expect(Array.isArray(detailBody.findings)).toBe(true);
   });
 });

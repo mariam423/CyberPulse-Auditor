@@ -122,8 +122,11 @@ test('security headers are present (SaaS guardrails)', async ({ request }) => {
 });
 
 test('rate limiter responds with 429 and Retry-After', async ({ request }) => {
+  // POST /api/scan is rate-limited at 30 req/min/IP and rejects malformed
+  // bodies with 400 (validation) without consuming engine work. Send 31+
+  // requests — the last ones must trip the limiter (429 + Retry-After).
   let last;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 34; i++) {
     last = await request.post('/api/scan', {
       data: { invalid: true },
       headers: { 'Content-Type': 'application/json' },
@@ -140,25 +143,47 @@ test('installer widget: OS tabs switch commands dynamically', async ({ page }) =
   await page.waitForTimeout(500);
 
   // Default (Linux): curl one-liner visible
-  const bashPanel = page.locator('pre[aria-label="Install command for Linux"]');
-  await expect(bashPanel).toContainText('curl -sSL');
-  await expect(bashPanel).toContainText('linux.sh | bash');
+  const cmdPanel = page.locator('[data-testid="install-command"]');
+  await expect(cmdPanel).toContainText('curl -sSL');
+  await expect(cmdPanel).toContainText('linux.sh | bash');
 
-  // Switch to macOS
+  // Switch to macOS — mac.sh script
   await page.locator('button[role="tab"]:has-text("macOS")').click();
-  const zshPanel = page.locator('pre[aria-label="Install command for macOS"]');
-  await expect(zshPanel).toContainText('macos.sh | bash');
+  await expect(cmdPanel).toContainText('mac.sh | bash');
 
-  // Switch to Windows → PowerShell one-liner
+  // Switch to Windows — PowerShell WebClient one-liner
   await page.locator('button[role="tab"]:has-text("Windows")').click();
-  const psPanel = page.locator('pre[aria-label="Install command for Windows"]');
-  await expect(psPanel).toContainText('iwr -useb');
-  await expect(psPanel).toContainText('windows.ps1 | iex');
+  await expect(cmdPanel).toContainText("iex ((New-Object System.Net.WebClient).DownloadString('");
+  await expect(cmdPanel).toContainText('windows.ps1');
 
   // Switch method to npm — identical command on every OS
   await page.locator('button[role="tab"]:has-text("npm")').click();
-  const npmPanel = page.locator('pre[aria-label="Install command for Windows"]');
-  await expect(npmPanel).toContainText('npm install -g cyberpulse-auditor');
+  await expect(cmdPanel).toContainText('npm install -g cyberpulse-auditor');
+
+  // Switch back to Linux via tab — npm stays, command unchanged, tab active
+  await page.locator('#install-tab-linux').click();
+  await expect(cmdPanel).toContainText('npm install -g cyberpulse-auditor');
+});
+
+test('installer widget: stays in sync with the onboarding page switcher', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('/dashboard/onboarding', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(500);
+
+  const cmdPanel = page.locator('[data-testid="install-command"]');
+
+  // Click the PAGE's Windows platform button — widget must follow.
+  await page.locator('button:has-text("Windows")').first().click();
+  await expect(cmdPanel).toContainText('windows.ps1');
+
+  // Now click the WIDGET's macOS tab — the page buttons must follow back.
+  await page.locator('#install-tab-macos').click();
+  await expect(cmdPanel).toContainText('mac.sh | bash');
+  // The page's macOS button is rendered active (aria-pressed).
+  await expect(
+    page.locator('button[aria-pressed="true"]:has-text("macOS")').first()
+  ).toBeVisible();
 });
 
 test('installer widget: copy button flips to Copied state', async ({ page }) => {
@@ -167,7 +192,7 @@ test('installer widget: copy button flips to Copied state', async ({ page }) => 
   await page.waitForLoadState('networkidle').catch(() => {});
   await page.waitForTimeout(500);
 
-  const copyBtn = page.locator('button[aria-label*="copy Linux install command"]');
+  const copyBtn = page.locator('button[aria-label*="Copy Linux install command"]');
   await expect(copyBtn).toBeVisible();
 
   // Grant clipboard permissions and copy

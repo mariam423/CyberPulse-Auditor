@@ -1,19 +1,20 @@
-# CyberPulse Auditor — Pull-Request Security Gate
-# ────────────────────────────────────────────────
-# Runs the full CyberPulse audit pipeline on every PR targeting main:
-#   1. Zero-regression guardrail: build + lint + the complete core test suite.
-#   2. Custom-rule validation: every YAML rule file in the PR must parse.
-#   3. CLI smoke test: the audit engine runs end-to-end against the local
-#      mock target (no external API keys required).
+# CyberPulse Auditor — CI/CD Pipeline
+# ═════════════════════════════════════
+# Two jobs:
+#   1. security-audit  — zero-regression gate + rule validation + CLI smoke
+#   2. e2e             — Playwright suite against the production build
 #
-# The security gate fails the PR when:
-#   - any core test fails (zero-regression directive)
-#   - any YAML rule file is invalid
-#   - the audit smoke run reports open CRITICAL findings
-#
-# No credentials are stored in the workflow: model API keys are provided
-# via repository secrets (OPENAI_API_KEY / ANTHROPIC_API_KEY) and are only
-# passed to the audit step when explicitly enabled.
+# E2E stability contract (fixes the historical exit-1 failures):
+#   - Node 20 (LTS) everywhere; the GUI SQLite reader uses better-sqlite3
+#     (node:sqlite does not exist below Node 22.5 — that crash is fixed at
+#     the source, gui/lib/db-compat.ts).
+#   - A mock LLM target (port 19999) runs for the WHOLE e2e job — the
+#     /api/scan closed-loop tests hit it; it is torn down in post steps.
+#   - Playwright webServer boots the production Next server and Playwright
+#     itself terminates it after the run (no orphan `next start` hangs).
+#   - `set -euo pipefail` only where a single command runs; long blocks use
+#     explicit exit-code propagation so failures surface as exit 1, never
+#     as a silent hang.
 
 name: CyberPulse Security Audit
 
@@ -45,6 +46,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ══════════════════════════════════════════════════════════════════════════
+  # Job 1 — Zero-regression + security-audit gate
+  # ══════════════════════════════════════════════════════════════════════════
   security-audit:
     name: Zero-Regression + Security Audit
     runs-on: ubuntu-latest
@@ -54,14 +58,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Node 20 LTS — required by the project engines field and the GUI's
+      # better-sqlite3 reader. (Node 22.4- would warn on engines >= 22.)
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install root dependencies
+        run: npm install
 
       # ── Guardrail 1: Zero-regression — the core suite must stay green ──────
 
@@ -78,55 +84,52 @@ jobs:
 
       - name: Validate custom YAML rule files
         run: |
-          set -euo pipefail
-          # Validate every rule file shipped in the repo (tests/fixtures + user rules)
-          find . -path ./node_modules -prune -o -path ./gui/node_modules -prune -o \
-            -type f \( -name "*.rules.yaml" -o -name "*.rules.yml" \) -print | while read -r f; do
+          # find exits 0 even when the while-loop consumes its output in a
+          # subshell — so collect files first, then iterate in THIS shell
+          # (pipefail-safe) and fail the step on the first invalid file.
+          FILES=$(find . \
+            -path ./node_modules -prune -o \
+            -path ./gui/node_modules -prune -o \
+            -type f \( -name "*.rules.yaml" -o -name "*.rules.yml" \) -print)
+          for f in $FILES; do
             echo "Validating: $f"
             node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts rules validate --file "$f" --json
           done
-          # Always validate the committed test fixtures so the rule engine itself is covered
+          # Always validate the committed fixtures (the rule engine contract).
           for f in tests/fixtures/rules/*.yaml; do
             [ -e "$f" ] || continue
-            if [[ "$f" == *"invalid-rules.yaml" ]]; then
-              echo "Skipping known-invalid fixture: $f"
-              continue
-            fi
+            case "$f" in *invalid-rules.yaml)
+              echo "Skipping known-invalid fixture: $f"; continue ;; esac
             echo "Validating fixture: $f"
             node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts rules validate --file "$f" --json
           done
           echo "All rule files valid."
 
       # ── Guardrail 3: CLI smoke audit against the built-in mock target ───────
-      # The mock provider in tests is deterministic and needs no API key.
+      # The mock provider is deterministic and needs no API key.
 
       - name: Audit smoke test (mock target, no keys required)
         run: |
-          set -euo pipefail
           TARGET_URL="${{ github.event.inputs.smoke_target }}"
           MAX_ITER="${{ github.event.inputs.max_iterations || '1' }}"
           [ -z "$TARGET_URL" ] && TARGET_URL="http://127.0.0.1:19999/mock-target"
           echo "Running audit smoke against: $TARGET_URL (iterations=$MAX_ITER)"
 
-          # Start a tiny mock LLM target that always refuses (safe posture).
-          node -e "
-            const http = require('node:http');
-            const srv = http.createServer((req, res) => {
-              let body = '';
-              req.on('data', (c) => (body += c));
-              req.on('end', () => {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                  id: 'mock', model: 'mock',
-                  choices: [{ index: 0, message: { role: 'assistant', content: \"I'm sorry, but I can't help with that request.\" }, finish_reason: 'stop' }],
-                }));
-              });
-            });
-            srv.listen(19999, '127.0.0.1', () => console.log('mock target up'));
-            setTimeout(() => process.exit(0), 100000);
-          " &
+          # ── Mock LLM target (refuses everything — safe posture) ──────────
+          # nohup + disown so `kill` in the trap reliably owns the PID;
+          # trap guarantees teardown even when the audit step fails.
+          nohup node scripts/ci/mock-target.mjs > /tmp/mock-target.log 2>&1 &
           MOCK_PID=$!
-          sleep 2
+          trap 'kill $MOCK_PID 2>/dev/null || true' EXIT
+
+          # Wait for the mock to accept connections (bounded, no sleep races).
+          for i in $(seq 1 20); do
+            if curl -sf -o /dev/null http://127.0.0.1:19999/health; then break; fi
+            sleep 1
+          done
+          curl -sf -o /dev/null http://127.0.0.1:19999/health || {
+            echo "::error::Mock target failed to start"; cat /tmp/mock-target.log; exit 1;
+          }
 
           node --import ts-node/esm --loader ts-node/esm bin/cyberpulse.ts audit \
             --goal "CI smoke audit — verify the closed loop runs clean" \
@@ -139,8 +142,11 @@ jobs:
             --output json \
             --output-file /tmp/cyberpulse-smoke-report.json \
             --db-path data/ci-smoke.db
-
-          kill $MOCK_PID 2>/dev/null || true
+          AUDIT_EXIT=$?
+          if [ $AUDIT_EXIT -ne 0 ]; then
+            echo "::error::Audit CLI exited with $AUDIT_EXIT"
+            exit $AUDIT_EXIT
+          fi
 
           # Gate: open critical findings block the merge.
           if [ ! -f /tmp/cyberpulse-smoke-report.json ]; then
@@ -167,11 +173,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # ── Responsive + API-guardrail e2e (Playwright + Chromium) ────────────────
-  responsive-e2e:
-    name: Responsive UI + SaaS Guardrails (Playwright)
+  # ══════════════════════════════════════════════════════════════════════════
+  # Job 2 — Playwright E2E (production build + mock target + clean teardown)
+  # ══════════════════════════════════════════════════════════════════════════
+  e2e:
+    name: Playwright E2E (GUI + API + responsive)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -186,30 +194,75 @@ jobs:
             package-lock.json
             gui/package-lock.json
 
+      # npm install (not ci) per the project's dependency strategy —
+      # tolerates the lockfiles' optional/native rebuilds for
+      # better-sqlite3 under Node 20.
       - name: Install root dependencies
-        run: npm ci
+        run: npm install
 
       - name: Install GUI dependencies
         working-directory: gui
-        run: npm ci
+        run: npm install
 
-      - name: Install Playwright Chromium
+      - name: Install Playwright browsers + OS deps
         working-directory: gui
-        run: npx playwright install chromium --with-deps
+        run: npx playwright install --with-deps chromium
 
+      # The E2E server MUST run the production build (spec requirement #3).
       - name: Build GUI (production)
         working-directory: gui
         run: npm run build
 
-      - name: Run responsive + guardrail e2e suite
-        working-directory: gui
-        run: npx playwright test e2e/responsive.spec.ts --reporter=line
+      # ── Mock LLM target: up for the WHOLE job, torn down after ─────────────
+      # api.spec.ts drives closed-loop scans against 127.0.0.1:19999.
+      - name: Start mock LLM target (background)
+        run: |
+          mkdir -p scripts/ci
+          # nohup + disown: survives the step, owned PID for post-teardown.
+          nohup node scripts/ci/mock-target.mjs > /tmp/mock-target.log 2>&1 &
+          echo $! > /tmp/mock-target.pid
+          for i in $(seq 1 20); do
+            if curl -sf -o /dev/null http://127.0.0.1:19999/health; then
+              echo "Mock target is up (PID $(cat /tmp/mock-target.pid))"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Mock target failed to start"
+          cat /tmp/mock-target.log || true
+          exit 1
 
-      - name: Upload Playwright traces on failure
+      # ── The test run itself ────────────────────────────────────────────────
+      # Playwright's `webServer` (playwright.config.ts) starts `next start`
+      # and PROVABLY terminates it when the run ends — that is the fix for
+      # the historical hang/exit-1: no manual background server management,
+      # no orphan processes. --reporter=line keeps CI logs compact.
+      - name: Run E2E suite (Playwright)
+        working-directory: gui
+        env:
+          # Deterministic scans: the queue worker posts to the mock target.
+          NODE_ENV: production
+          # Keep worker progress snappy in CI.
+          QUEUE_MAX_DEPTH: '200'
+        run: npx playwright test --reporter=line
+
+      # Always-on teardown: kill the mock by recorded PID (idempotent).
+      - name: Stop mock LLM target
+        if: always()
+        run: |
+          if [ -f /tmp/mock-target.pid ]; then
+            kill "$(cat /tmp/mock-target.pid)" 2>/dev/null || true
+          fi
+          pkill -f "mock-target.mjs" 2>/dev/null || true
+
+      - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-failure-artifacts
-          path: gui/test-results/
+          path: |
+            gui/test-results/
+            gui/playwright-report/
+            /tmp/mock-target.log
           if-no-files-found: ignore
           retention-days: 7
