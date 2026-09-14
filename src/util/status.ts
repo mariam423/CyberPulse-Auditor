@@ -37,7 +37,7 @@ export function uxWrite(line: string): void {
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 const INTERVAL_MS = 80;
 
-type SpinnerState = 'running' | 'done' | 'fail' | 'skip';
+type SpinnerState = 'running' | 'done' | 'fail' | 'skip' | 'halted';
 
 /** A single terminal spinner bound to one line of output. */
 export class Spinner {
@@ -80,6 +80,20 @@ export class Spinner {
   private clearLine(): void {
     if (!this.animated) return;
     this.stream.write('\r' + ' '.repeat(Math.max(this.message.length + 10, 40)) + '\r');
+  }
+
+  /** Erase the current spinner line (TTY only) — call before stamping over it. */
+  erase(): void {
+    this.clearLine();
+  }
+
+  /** Stop the spinner without printing a completion line (TTY only). */
+  halt(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.state = 'halted';
   }
 
   /** Overwrite the static non-TTY line in-place before stamping the result. */
@@ -196,9 +210,25 @@ export class StepTracker {
 
   private stamp(step: Step, suffix = ''): void {
     if (!this.interactive) return;
+    // The live spinner frame occupies the TTY line — erase it before the
+    // stamp, or the terminal shows "⠹ Analyzing target adapter  ✔ Analyzing…".
+    this.spinner.erase();
     const stream = this.spinnerStream;
     if (stream) stream.write(`  ${ICONS[step.status]!}  ${COLORS[step.status]!(step.label)}${suffix}\n`);
     else uxWrite(`  ${ICONS[step.status]!}  ${COLORS[step.status]!(step.label)}${suffix}`);
+  }
+
+  /** Halt the tracking spinner once every step has a final stamp. */
+  finalize(): void {
+    if (this.steps.length > 0 && this.steps.every((s) => s.status === 'done' || s.status === 'fail' || s.status === 'skip')) {
+      this.spinner.erase();
+      this.spinner.halt();
+    }
+  }
+
+  /** Erase the live spinner frame — before interleave-safe non-spinner output. */
+  erase(): void {
+    if (this.interactive) this.spinner.erase();
   }
 
   start(label: string): void {

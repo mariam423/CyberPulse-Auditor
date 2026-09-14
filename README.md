@@ -26,6 +26,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-8A2BE2.svg)](LICENSE)
 [![OWASP LLM Top 10](https://img.shields.io/badge/OWASP-LLM_Top_10-000000?logo=owasp&logoColor=white)](https://genai.owasp.org/llm-top-10/)
 
+![CyberPulse Auditor dashboard — live run telemetry](docs/images/dashboard-overview.png)
+
+**The dashboard, live from a real audit.** Every card, chart, and row on this screen is backed by a completed closed-loop run in SQLite — no mockups, no screenshots of sample data.
+
 </div>
 
 ---
@@ -113,7 +117,9 @@ cyberpulse audit \
   --target-type openai-compatible
 ```
 
-You'll see the banner, a live step tracker (catalog → attack → evaluate → patch → retest → report), a severity breakdown, and a findings table with open/closed status per finding.
+That command takes over your terminal — gradient banner, a spinner-driven step tracker (catalog → attack → evaluate → patch → retest → report), then a severity breakdown and a findings table with open/closed verdicts. Here's a real run, captured mid-loop:
+
+![CyberPulse CLI — banner, step tracker, and audit summary in a live terminal run](docs/images/cli-terminal-banner.png)
 
 **Global CLI install** (what `preferGlobal` is for):
 
@@ -191,7 +197,9 @@ Indicators you define are merged into category-specific detection heuristics, so
 - **Report downloads** — any format, straight from stored run data
 - **Queue telemetry** — the audit queue's depth and health at a glance
 
-The dashboard reads the same `data/cyberpulse.db` as the CLI, so runs started from the terminal appear in the UI and vice versa.
+The dashboard reads the same `data/cyberpulse.db` as the CLI, so runs started from the terminal appear in the UI and vice versa. A drilldown of a completed run looks like this:
+
+![CyberPulse dashboard — per-run findings drilldown with severity badges and retest verdicts](docs/images/gui-scan-results.png)
 
 ## Security & Bug Hunt Highlights
 
@@ -238,6 +246,7 @@ CyberPulse-Auditor/
 ├── agents/               # Copaw/OpenClaude agent templates (security-analyst, patch-engineer...)
 ├── tests/                # Vitest suite — 107 tests, plus YAML rule fixtures
 ├── data/                 # SQLite DB + OWASP LLM Top 10 seed catalog
+├── docs/images/          # Screenshots referenced by this README (real captures, no mockups)
 ├── scripts/              # CI helper scripts
 ├── ARCHITECTURE.md       # Full design document: agents, protocols, failure modes
 └── SECURITY.md           # Security & hardening report

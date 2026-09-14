@@ -51,10 +51,11 @@ export type AuditOptions = z.infer<typeof AuditOptionsSchema>;
 
 // ── Output helpers ─────────────────────────────────────────────────────────────
 
-function writeOutput(content: string, outputFile?: string): void {
+function writeOutput(content: string, outputFile?: string, eraseFrame?: () => void): void {
   if (outputFile) {
     const resolved = resolve(outputFile);
     writeFileSync(resolved, content, 'utf-8');
+    eraseFrame?.(); // don't collide with a live spinner frame
     ui.success(`Report saved → ${resolved}`);
   } else {
     console.log(content);
@@ -277,14 +278,14 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
   // ── Results ────────────────────────────────────────────────────
   steps.start('Formatting report');
   if (opts.outputFile) {
-    writeOutput(result.output, opts.outputFile);
+    writeOutput(result.output, opts.outputFile, () => steps.erase());
     steps.doneWith('Formatting report', `saved to ${opts.outputFile}`);
   } else if (opts.output === 'text') {
     steps.doneWith('Formatting report', 'text');
     console.log(result.output);
   } else {
     steps.done('Formatting report');
-    writeOutput(result.output, opts.outputFile);
+    writeOutput(result.output, opts.outputFile, () => steps.erase());
   }
 
   ui.section('Audit Complete');
@@ -321,6 +322,9 @@ export async function runAudit(opts: AuditOptions): Promise<void> {
     }
     ui.blank();
   }
+
+  // Every step is now stamped — stop the tracking spinner so no frame dangles.
+  steps.finalize();
 }
 
 const hex = (c: string) => chalk.hex(c);
