@@ -44,8 +44,13 @@ test.describe('GET /api/report/[id] — unified formats', () => {
     expect(await r.text()).toContain('CyberPulse');
   });
 
-  test('404s cleanly for unknown runs', async ({ request }) => {
-    const r = await request.get('/api/report/run_does_not_exist?format=json');
+  test('404s cleanly for unknown well-formed runs (400 for malformed ids)', async ({ request }) => {
+    // Malformed id → rejected at the format gate (400, no DB access)
+    const bad = await request.get('/api/report/run_does_not_exist?format=json');
+    expect(bad.status()).toBe(400);
+    expect((await bad.json()).error).toContain('Invalid run id');
+    // Well-formed but unknown hex id → clean 404
+    const r = await request.get('/api/report/run_ffffffffffffffffffffffff?format=json');
     expect(r.status()).toBe(404);
     expect((await r.json()).error).toContain('not found');
   });

@@ -11,6 +11,7 @@ import { asRunId } from '../util/ids.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { createModelClient } from '../model/provider.js';
 import { createTargetAdapter } from '../targets/adapter.js';
+import { loadCatalog } from '../owasp/catalog.js';
 import type { AuditOutputFormat } from '../orchestrator/orchestrator.js';
 
 export type { AuditConfig, ScanStatus, RunReport, OwaspId };
@@ -52,10 +53,14 @@ export async function runAudit(
   // Import and use the existing Orchestrator
   const { OrchestratorConfigSchema } = await import('../orchestrator/orchestrator.js');
 
+  // owaspIds omitted (GUI scan with no explicit category selection) →
+  // default to the full OWASP LLM Top 10, matching the CLI's behavior.
+  const owaspIds = config.owaspIds ?? Array.from(loadCatalog().keys());
+
   const cfg = OrchestratorConfigSchema.parse({
     goal: config.goal,
     targetDescriptor: JSON.stringify(config.target),
-    owaspIds: config.owaspIds,
+    owaspIds,
     maxIterations: config.maxIterations,
     applyPatches: config.applyPatches,
     allowOpenCritical: config.allowOpenCritical,

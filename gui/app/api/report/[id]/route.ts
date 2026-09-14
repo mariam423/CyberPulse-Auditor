@@ -9,6 +9,7 @@
  * consume the same unified report service over the shared SQLite core.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { RunIdParamSchema } from '@/lib/api-guard';
 import { resolve } from 'node:path';
 import { getRun } from '@/lib/db';
 import { REPORT_FORMATS, FORMAT_META, generateReport, reportFilename } from '@report/service';
@@ -35,14 +36,18 @@ export async function GET(
     const download = url.searchParams.get('download') === '1';
 
     // 404 fast when the run does not exist (same message as the CLI)
-    const run = getRun(params.id);
+    const parsedId = RunIdParamSchema.safeParse(params.id);
+    if (!parsedId.success) {
+      return NextResponse.json({ error: 'Invalid run id format' }, { status: 400 });
+    }
+    const run = getRun(parsedId.data);
     if (!run) {
-      return NextResponse.json({ error: `Run ${params.id} not found` }, { status: 404 });
+      return NextResponse.json({ error: `Run not found` }, { status: 404 });
     }
 
-    const result = generateReport(params.id, format, rootDbPath());
+    const result = generateReport(parsedId.data, format, rootDbPath());
     if ('error' in result) {
-      return NextResponse.json({ error: `Run ${params.id} not found` }, { status: 404 });
+      return NextResponse.json({ error: `Run not found` }, { status: 404 });
     }
 
     const meta = FORMAT_META[format];
@@ -50,14 +55,14 @@ export async function GET(
       'Content-Type': meta.contentType,
     };
     if (download) {
-      headers['Content-Disposition'] = `attachment; filename="${reportFilename(params.id, format)}"`;
+      headers['Content-Disposition'] = `attachment; filename="${reportFilename(parsedId.data, format)}"`;
     }
 
     return new NextResponse(result.content, { status: 200, headers });
   } catch (err) {
     console.error('[api/report/:id] Error:', err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

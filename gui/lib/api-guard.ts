@@ -53,10 +53,19 @@ export function checkRateLimit(
   const limit = opts.max ?? Number(process.env.RATE_LIMIT_MAX ?? 30);
   const windowMs = opts.windowMs ?? Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60_000);
 
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    'local';
+  // Client IP resolution:
+  //   - Behind a trusted reverse proxy (nginx/Cloud), X-Forwarded-For's
+  //     FIRST entry is proxy-appended and trustworthy → use it ONLY when
+  //     the deployment opts in via TRUST_PROXY=1 (otherwise any client can
+  //     spoof the header and mint a fresh rate-limit window per request).
+  //   - Direct connections use the socket address from Next.
+  const trustProxy = process.env.TRUST_PROXY === '1';
+  const forwarded = req.headers.get('x-forwarded-for');
+  const ip = trustProxy && forwarded
+    ? forwarded.split(',')[0]!.trim()
+    : (req.headers.get('x-real-ip') && trustProxy
+        ? req.headers.get('x-real-ip')!
+        : 'local');
 
   const key = `${routeKey}:${ip}`;
   const now = Date.now();

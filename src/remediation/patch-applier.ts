@@ -144,6 +144,24 @@ export const AppliedPatchSchema = z.object({
 export type AppliedPatch = z.infer<typeof AppliedPatchSchema>;
 
 /**
+ * Confinement guard: the resolved patch target MUST stay inside rootDir.
+ * patch.file can originate from stored run data (DB) or LLM-shaped
+ * structures — a traversal like `../../etc/cron.d/x` must never escape
+ * the declared patch root. Both symlink-free lexical checks and the
+ * real (case-exact) path prefix are verified.
+ */
+function confineToRoot(rootDir: string, file: string): string {
+  const root = resolve(rootDir);
+  const target = resolve(root, file);
+  if (target !== root && !target.startsWith(root + '/')) {
+    throw new Error(
+      `Patch target escapes patch root: ${JSON.stringify(file).slice(0, 120)} → ${target} (root: ${root})`
+    );
+  }
+  return target;
+}
+
+/**
  * APPLY step — write a hardened patch to the target codebase.
  * The unified diff is applied to the file content first; the vetted guard
  * block (SSRF/deser runtime guards) is appended after, because it is additive
@@ -151,7 +169,7 @@ export type AppliedPatch = z.infer<typeof AppliedPatchSchema>;
  * recorded for rollback. Files that do not exist are seeded with the patch.
  */
 export function applyCodePatch(patch: CodePatch, rootDir: string): AppliedPatch {
-  const target = resolve(rootDir, patch.file);
+  const target = confineToRoot(rootDir, patch.file);
 
   const guardBlock = extractGuardBlock(patch);
   // Transport form carries diff+guard concatenated; strip the guard tail
@@ -184,7 +202,7 @@ export function applyCodePatch(patch: CodePatch, rootDir: string): AppliedPatch 
  */
 export function rollbackPatch(applied: AppliedPatch, rootDir: string): void {
   if (!applied.applied) return;
-  const target = resolve(rootDir, applied.file);
+  const target = confineToRoot(rootDir, applied.file);
   if (applied.backupContent === null) {
     logger.info('patch:applier', `Rollback of ${applied.file}: file was seeded — leaving in place`);
     return;
@@ -257,7 +275,17 @@ export function autoApplyPatches(
       continue;
     }
 
-    const applied = applyCodePatch(hardened, rootDir);
+    let applied: AppliedPatch;
+    try {
+      applied = applyCodePatch(hardened, rootDir);
+    } catch (err) {
+      // Confinement violations (path escape) reject THIS patch, not the run.
+      result.rejected.push({
+        file: p.file,
+        reasons: [err instanceof Error ? err.message : 'patch apply failed'],
+      });
+      continue;
+    }
     result.appliedPatches.push(applied);
     if (applied.applied) result.applied++;
   }

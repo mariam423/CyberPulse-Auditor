@@ -475,7 +475,7 @@ export function buildProgram(): Command {
     .option('--rules-dir <dir>', 'Load custom security rules from every YAML file in a directory')
     .option('--output <format>', 'Output format: json | text | markdown | sarif | html', 'text')
     .option('--output-file <path>', 'Write report to file instead of stdout')
-    .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
+    .option('--db-path <path>', 'SQLite database path (default: shared data/cyberpulse.db)')
     .option('--verbose', 'Show verbose internal logs (stderr)')
     .option('--debug', 'Show full debug internal logs (stderr)')
     .action(async (opts) => {
@@ -533,7 +533,7 @@ export function buildProgram(): Command {
     .requiredOption('--finding <id>', 'Finding ID to retest')
     .option('--output <format>', 'Output format: json | text', 'text')
     .option('--output-file <path>', 'Write report to file instead of stdout')
-    .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
+    .option('--db-path <path>', 'SQLite database path (default: shared data/cyberpulse.db)')
     .option('--verbose', 'Show verbose internal logs (stderr)')
     .option('--debug', 'Show full debug internal logs (stderr)')
     .action(async (opts) => {
@@ -666,7 +666,7 @@ export function buildProgram(): Command {
     .requiredOption('--run <id>', 'Run ID')
     .requiredOption('--format <format>', 'Report format: json | markdown | sarif | html | text', 'text')
     .option('--output-file <path>', 'Write report to file instead of stdout')
-    .option('--db-path <path>', 'SQLite database path', 'data/cyberpulse.db')
+    .option('--db-path <path>', 'SQLite database path (default: shared data/cyberpulse.db)')
     .option('--verbose', 'Show verbose internal logs (stderr)')
     .option('--debug', 'Show full debug internal logs (stderr)')
     .action(async (opts) => {

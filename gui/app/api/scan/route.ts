@@ -58,7 +58,7 @@ async function handleScan(req: NextRequest): Promise<NextResponse> {
     }
     console.error('[api/scan] Enqueue error:', err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

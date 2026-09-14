@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
-import { resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { mkdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { logger } from '../util/logger.js';
 import type { RunId, FindingId, PatchId, RetestId } from '../util/ids.js';
 
@@ -48,6 +49,29 @@ export interface RetestReadRow {
   ts: string;
 }
 
+/**
+ * Default DB resolution: prefer a data/cyberpulse.db relative to cwd (repo
+ * checkout — matches the CLI's documented default). If cwd has no data/
+ * directory (global install, cron, CI running from elsewhere), walk upward
+ * from this module until the shared DB is located — identical behavior for
+ * src/ (dev) and dist/ (compiled) layouts, keeping the audit trail shared
+ * with the GUI regardless of where `cyberpulse` was invoked from.
+ */
+function resolveDefaultDb(): string {
+  const cwdDb = resolve(process.cwd(), 'data/cyberpulse.db');
+  if (existsSync(cwdDb)) return cwdDb;
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const candidate = resolve(dir, 'data/cyberpulse.db');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Nothing found → create beside cwd (legacy behavior, fresh installs).
+  return cwdDb;
+}
+
 export interface AttemptReadRow {
   id: string;
   run_id: string;
@@ -64,10 +88,12 @@ export class SqliteStore {
     // dbPath may be:
     //   - a direct database file path (e.g. "data/cyberpulse.db", "/tmp/x.db")
     //   - a base directory (legacy cwd-style) → append data/cyberpulse.db
-    //   - omitted → <cwd>/data/cyberpulse.db
+    //   - omitted → cwd/data/cyberpulse.db when it exists (repo checkout),
+    //               else the packaged DB next to the module root — so
+    //               `cyberpulse` works from ANY directory, not just repo root.
     const resolved = dbPath
       ? resolve(dbPath.endsWith('.db') || dbPath.endsWith('.sqlite') ? dbPath : resolve(dbPath, 'data/cyberpulse.db'))
-      : resolve(process.cwd(), 'data/cyberpulse.db');
+      : resolveDefaultDb();
     mkdirSync(resolve(resolved, '..'), { recursive: true });
     this.db = new Database(resolved);
     this.db.pragma('journal_mode = WAL');

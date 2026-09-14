@@ -21,15 +21,22 @@ test.describe('API surface — run history', () => {
     }
   });
 
-  test('GET /api/runs/<unknown-id> responds 404', async ({ request }) => {
+  test('GET /api/runs/<malformed-id> responds 400 (id-format guard)', async ({ request }) => {
     const res = await request.get('/api/runs/run_does_not_exist');
+    expect(res.status()).toBe(400);
+    expect((await res.json()).error).toContain('Invalid run id');
+  });
+
+  test('GET /api/runs/<well-formed-unknown-id> responds 404', async ({ request }) => {
+    // run_ + valid hex shape — passes the format gate, fails the lookup
+    const res = await request.get('/api/runs/run_ffffffffffffffffffffffff');
     expect(res.status()).toBe(404);
     expect((await res.json()).error).toContain('not found');
   });
 
-  test('GET /api/runs/<unknown-id>/sarif responds 404', async ({ request }) => {
+  test('GET /api/runs/<unknown-id>/sarif responds 400 on malformed id', async ({ request }) => {
     const res = await request.get('/api/runs/run_does_not_exist/sarif');
-    expect(res.status()).toBe(404);
+    expect(res.status()).toBe(400);
   });
 });
 

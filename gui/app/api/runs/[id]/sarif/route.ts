@@ -5,6 +5,7 @@
  * so the SARIF payload is byte-identical between GUI and CLI.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { RunIdParamSchema } from '@/lib/api-guard';
 import { resolve } from 'node:path';
 import { getRun } from '@/lib/db';
 import { buildRunReport, renderReport, reportFilename, FORMAT_META } from '@report/service';
@@ -22,7 +23,11 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const run = getRun(params.id);
+    const parsedId = RunIdParamSchema.safeParse(params.id);
+    if (!parsedId.success) {
+      return NextResponse.json({ error: 'Invalid run id format' }, { status: 400 });
+    }
+    const run = getRun(parsedId.data);
     if (!run) {
       return NextResponse.json({ error: 'Run not found' }, { status: 404 });
     }
@@ -39,13 +44,13 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': FORMAT_META.sarif.contentType,
-        'Content-Disposition': `attachment; filename="${reportFilename(params.id, 'sarif')}"`,
+        'Content-Disposition': `attachment; filename="${reportFilename(parsedId.data, 'sarif')}"`,
       },
     });
   } catch (err) {
     console.error('[api/runs/:id/sarif] Error:', err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

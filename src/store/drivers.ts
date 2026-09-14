@@ -20,7 +20,9 @@
 
 import { z } from 'zod';
 import Sqlite3Database from 'better-sqlite3';
-import { resolve as resolvePath } from 'node:path';
+import { resolve as resolvePath, dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /** better-sqlite3 surface this driver needs (Node 20-compatible). */
 type SqliteDb = InstanceType<typeof Sqlite3Database>;
@@ -63,6 +65,31 @@ export interface StoreDriver {
   close(): Promise<void>;
 }
 
+// ── Shared DB path resolution (single source for all read drivers) ─────────
+
+/**
+ * Locate the shared cyberpulse.db:
+ *   1. <cwd>/data/cyberpulse.db          (repo root — CLI default)
+ *   2. <cwd>/../data/cyberpulse.db       (gui/ cwd — Next server)
+ *   3. walk up from this module          (arbitrary cwd — global install)
+ * Falls back to (1) so fresh checkouts create the documented location.
+ */
+export function resolveSharedDbPath(): string {
+  const cwdDb = resolvePath(process.cwd(), 'data/cyberpulse.db');
+  if (existsSync(cwdDb)) return cwdDb;
+  const guiCwdDb = resolvePath(process.cwd(), '..', 'data/cyberpulse.db');
+  if (existsSync(guiCwdDb)) return guiCwdDb;
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const candidate = resolvePath(dir, 'data/cyberpulse.db');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return cwdDb;
+}
+
 // ── SQLite driver (default — same data the CLI writes) ──────────────────────
 
 export class SqliteDriver implements StoreDriver {
@@ -71,10 +98,13 @@ export class SqliteDriver implements StoreDriver {
   private readonly dbPath: string;
 
   constructor(dbPath?: string) {
+    // Env override → explicit arg → cwd/data (repo root or gui/ cwd) →
+    // walk up from this module to the packaged shared DB. Never invents a
+    // stray <cwd>/../data directory when invoked from arbitrary locations.
     this.dbPath =
       dbPath ??
       process.env.CYBERPULSE_DB_PATH ??
-      resolvePath(process.cwd(), '..', 'data', 'cyberpulse.db');
+      resolveSharedDbPath();
   }
 
   private conn(): SqliteDb {
